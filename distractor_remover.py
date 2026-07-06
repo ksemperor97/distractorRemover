@@ -81,9 +81,13 @@ def strip_marked(content):
 
 def render_hosts(current, cfg):
     new = strip_marked(current).rstrip("\n") + "\n"
-    if cfg.get("blocking") and cfg.get("sites"):
+    if effective_blocking(cfg) and cfg.get("sites"):
         new += build_block_text(cfg["sites"]) + "\n"
     return new
+
+
+def effective_blocking(cfg):
+    return bool(cfg.get("manual_blocking") or cfg.get("scheduled_blocking"))
 
 
 # --- schedule parsing / formatting -----------------------------------------
@@ -225,9 +229,13 @@ def load_config():
         if d and d not in seen:
             seen.add(d)
             sites.append(d)
+    manual_blocking = bool(cfg.get("manual_blocking", cfg.get("blocking", False)))
+    scheduled_blocking = bool(cfg.get("scheduled_blocking", False))
     return {
         "sites": sites,
-        "blocking": bool(cfg.get("blocking", False)),
+        "manual_blocking": manual_blocking,
+        "scheduled_blocking": scheduled_blocking,
+        "blocking": bool(manual_blocking or scheduled_blocking),
         "schedule": _clean_schedule(cfg.get("schedule")),
     }
 
@@ -235,11 +243,21 @@ def load_config():
 def save_config(cfg):
     os.makedirs(SUPPORT_DIR, exist_ok=True)
     tmp = CONFIG_PATH + ".tmp"
+    manual_blocking = bool(cfg.get("manual_blocking", False))
+    scheduled_blocking = bool(cfg.get("scheduled_blocking", False))
+    blocking = bool(manual_blocking or scheduled_blocking)
     with open(tmp, "w") as f:
         json.dump(
-            {"sites": cfg["sites"], "blocking": cfg["blocking"], "schedule": cfg["schedule"]},
+            {
+                "sites": cfg["sites"],
+                "manual_blocking": manual_blocking,
+                "scheduled_blocking": scheduled_blocking,
+                "blocking": blocking,
+                "schedule": cfg["schedule"],
+            },
             f, indent=2,
         )
+    cfg["blocking"] = blocking
     os.replace(tmp, CONFIG_PATH)
 
 
@@ -262,7 +280,7 @@ def run_privileged_script(script_path, *args):
     return subprocess.run(["/usr/bin/osascript", "-e", osa], capture_output=True, text=True)
 
 
-def apply_hosts(cfg):
+def apply_hosts(cfg, force=False):
     """Make /etc/hosts match cfg. Silent via helper if available, else prompts.
 
     Raises PermissionError if the user cancels a prompt, RuntimeError otherwise.
@@ -270,7 +288,7 @@ def apply_hosts(cfg):
     with open(HOSTS_PATH) as f:
         current = f.read()
     desired = render_hosts(current, cfg)
-    if desired == current:
+    if desired == current and not (force and helper_installed()):
         return
 
     os.makedirs(SUPPORT_DIR, exist_ok=True)
@@ -329,20 +347,26 @@ class DistractorRemover(rumps.App):
 
     # --- state helpers -----------------------------------------------------
 
+    def _sync_blocking(self):
+        self.cfg["blocking"] = effective_blocking(self.cfg)
+
     def _active(self):
-        return bool(self.cfg["blocking"] and self.cfg["sites"])
+        return bool(effective_blocking(self.cfg) and self.cfg["sites"])
 
     def update_icon(self):
         self.title = ICON_ON if self._active() else ICON_OFF
 
     def _commit(self, revert):
+        self._sync_blocking()
         try:
             apply_hosts(self.cfg)
         except PermissionError:
             revert()
+            self._sync_blocking()
             return False
         except Exception as e:
             revert()
+            self._sync_blocking()
             rumps.alert("Couldn't update blocking", str(e))
             return False
         save_config(self.cfg)
@@ -355,8 +379,13 @@ class DistractorRemover(rumps.App):
         self.menu.clear()
         n = len(self.cfg["sites"])
 
-        toggle_title = ("🛡️  Blocking is ON  —  click to UNBLOCK all" if self._active()
-                        else "⚪  Blocking is OFF  —  click to BLOCK all")
+        manual = bool(self.cfg.get("manual_blocking"))
+        scheduled = bool(self.cfg.get("scheduled_blocking"))
+        if manual:
+            toggle_title = "🛡️  Manual blocking is ON  —  click to turn OFF"
+        else:
+            suffix = "  (schedule is blocking now)" if scheduled else ""
+            toggle_title = f"⚪  Manual blocking is OFF  —  click to turn ON{suffix}"
 
         header = rumps.MenuItem(f"Blocked sites ({n})")
         header.set_callback(None)
@@ -430,17 +459,20 @@ class DistractorRemover(rumps.App):
     # --- site actions ------------------------------------------------------
 
     def toggle_blocking(self, _):
-        want = not self.cfg["blocking"]
+        old_manual = bool(self.cfg.get("manual_blocking"))
+        want = not old_manual
         if want and not self.cfg["sites"]:
             rumps.alert("No sites yet", "Add a site to block first.")
             return
-        if not want and self._active():          # unblocking while active → confirm
-            if rumps.alert("Unblock all sites?",
-                           "This stops blocking every site in your list.",
-                           ok="Unblock", cancel="Keep blocking") != 1:
+        if not want:
+            msg = "This turns off manual blocking."
+            if self.cfg.get("scheduled_blocking"):
+                msg += "\n\nThe current schedule window is still active, so sites will remain blocked."
+            if rumps.alert("Turn off manual blocking?", msg,
+                           ok="Turn off", cancel="Keep blocking") != 1:
                 return
-        self.cfg["blocking"] = want
-        self._commit(revert=lambda: self.cfg.update(blocking=not want))
+        self.cfg["manual_blocking"] = want
+        self._commit(revert=lambda: self.cfg.update(manual_blocking=old_manual))
 
     def locked_remove(self, _):
         rumps.alert(
@@ -467,7 +499,7 @@ class DistractorRemover(rumps.App):
             rumps.alert("Already added", f"{domain} is already in your list.")
             return
         self.cfg["sites"].append(domain)
-        if self.cfg["blocking"]:
+        if self._active():
             self._commit(revert=lambda: self.cfg["sites"].remove(domain))
         else:
             save_config(self.cfg)
@@ -481,7 +513,7 @@ class DistractorRemover(rumps.App):
             return
         idx = self.cfg["sites"].index(domain)
         self.cfg["sites"].remove(domain)
-        if self.cfg["blocking"]:
+        if self._active():
             self._commit(revert=lambda: self.cfg["sites"].insert(idx, domain))
         else:
             save_config(self.cfg)
@@ -492,9 +524,16 @@ class DistractorRemover(rumps.App):
     def toggle_schedule(self, _):
         sch = self.cfg["schedule"]
         if sch["enabled"]:
+            old_enabled = sch["enabled"]
+            old_scheduled = bool(self.cfg.get("scheduled_blocking"))
             sch["enabled"] = False
-            save_config(self.cfg)
-            self.rebuild()
+            self.cfg["scheduled_blocking"] = False
+            self._commit(
+                revert=lambda: (
+                    sch.update(enabled=old_enabled),
+                    self.cfg.update(scheduled_blocking=old_scheduled),
+                )
+            )
             return
         if not sch["windows"]:
             rumps.alert("Set a time window first",
@@ -517,6 +556,11 @@ class DistractorRemover(rumps.App):
         self._last_desired = None
         save_config(self.cfg)
         self._enforce_schedule(force=True)
+        if self._active() and helper_installed():
+            try:
+                apply_hosts(self.cfg, force=True)
+            except Exception:
+                pass
         self.rebuild()
 
     def edit_schedule(self, _):
@@ -533,9 +577,21 @@ class DistractorRemover(rumps.App):
             self._sched_editor = None
             if windows is None:
                 return                          # cancelled — leave everything as-is
+            old_windows = self.cfg["schedule"]["windows"]
+            old_enabled = self.cfg["schedule"]["enabled"]
+            old_scheduled = bool(self.cfg.get("scheduled_blocking"))
             self.cfg["schedule"]["windows"] = windows
             if not windows:
                 self.cfg["schedule"]["enabled"] = False
+                self.cfg["scheduled_blocking"] = False
+                self._last_desired = None
+                self._commit(
+                    revert=lambda: (
+                        self.cfg["schedule"].update(windows=old_windows, enabled=old_enabled),
+                        self.cfg.update(scheduled_blocking=old_scheduled),
+                    )
+                )
+                return
             self._last_desired = None
             save_config(self.cfg)
             self.rebuild()
@@ -567,9 +623,18 @@ class DistractorRemover(rumps.App):
                 rumps.alert("Failed", (r.stderr or "").strip() or "Could not remove helper.")
                 return
             if self.cfg["schedule"]["enabled"]:
+                old_enabled = self.cfg["schedule"]["enabled"]
                 self.cfg["schedule"]["enabled"] = False  # can't run silently anymore
-                save_config(self.cfg)
-            self.rebuild()
+                old_scheduled = bool(self.cfg.get("scheduled_blocking"))
+                self.cfg["scheduled_blocking"] = False
+                self._commit(
+                    revert=lambda: (
+                        self.cfg["schedule"].update(enabled=old_enabled),
+                        self.cfg.update(scheduled_blocking=old_scheduled),
+                    )
+                )
+            else:
+                self.rebuild()
         else:
             if rumps.alert(
                 "Enable password-free mode?",
@@ -602,13 +667,21 @@ class DistractorRemover(rumps.App):
         if not force and desired == self._last_desired:
             return
         self._last_desired = desired
-        if desired == self.cfg["blocking"]:
+        if desired == bool(self.cfg.get("scheduled_blocking")):
+            if force and self._active():
+                try:
+                    apply_hosts(self.cfg, force=True)
+                except Exception:
+                    pass
             return
-        self.cfg["blocking"] = desired
+        old_scheduled = bool(self.cfg.get("scheduled_blocking"))
+        self.cfg["scheduled_blocking"] = desired
+        self._sync_blocking()
         try:
             apply_hosts(self.cfg)
         except Exception:
-            self.cfg["blocking"] = not desired
+            self.cfg["scheduled_blocking"] = old_scheduled
+            self._sync_blocking()
             return
         save_config(self.cfg)
         self.rebuild()
@@ -628,6 +701,11 @@ class DistractorRemover(rumps.App):
         except Exception:
             pass
         self._enforce_schedule(force=True)
+        if self._active() and helper_installed():
+            try:
+                apply_hosts(self.cfg, force=True)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
