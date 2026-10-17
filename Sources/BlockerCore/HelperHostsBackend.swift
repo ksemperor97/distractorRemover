@@ -6,8 +6,6 @@ public protocol HostsBackend: AnyObject {
     func readHosts() throws -> String
     /// Makes the managed section list exactly `domains` (removes it when empty).
     func write(domains: [String], allowPrompt: Bool) throws
-    /// Backs up hosts and removes every managed marker, even an incomplete one.
-    func resetManagedSection(allowPrompt: Bool) throws -> String
     /// Replaces the whole hosts file after backing it up (manual editor).
     /// Returns the backup's location.
     func replaceHosts(with text: String) throws -> URL
@@ -88,21 +86,6 @@ public final class HelperHostsBackend: HostsBackend {
         }
         let result = broker.runAsAdministrator(scripts.privilegedHelper, arguments: [action], stdinLines: domains)
         try check(result, fallback: "Failed to update the hosts file.")
-    }
-
-    public func resetManagedSection(allowPrompt: Bool) throws -> String {
-        let result: ProcessResult
-        if case .ready(let version) = helperStatus, version == bundledHelperVersion {
-            result = broker.runInstalledHelper("--reset", stdinLines: [])
-            if result.timedOut { throw BlockerError.failed("Password-free helper timed out during reset.") }
-        } else {
-            guard allowPrompt else {
-                throw BlockerError.authorizationRequired("Administrator approval is required to reset the hosts section.")
-            }
-            result = broker.runAsAdministrator(scripts.privilegedHelper, arguments: ["--reset"], stdinLines: [])
-        }
-        try check(result, fallback: "Could not reset the managed hosts section.")
-        return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public func replaceHosts(with text: String) throws -> URL {

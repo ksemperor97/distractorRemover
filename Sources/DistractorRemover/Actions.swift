@@ -152,13 +152,17 @@ extension AppDelegate {
             } catch {
                 return Dialogs.warn("Couldn’t read the hosts file", "\(error)")
             }
-            guard let edited = Dialogs.editText(
-                "Hosts File",
-                "The full \(self.environment.paths.hostsFile.path) file. A backup is saved before your changes, "
-                    + "and you’ll be asked for your password. The lines between the distractorRemover markers "
-                    + "follow your blocked sites and are rewritten automatically.",
-                text: current, ok: "Save"
-            ), edited != current else { return }
+            var note = "The full \(self.environment.paths.hostsFile.path) file. A backup is saved before your changes, "
+                + "and you’ll be asked for your password. The lines between the distractorRemover markers "
+                + "follow your blocked sites and are rewritten automatically."
+            if self.controller.hostsNeedManualFix {
+                note = "The distractorRemover marker lines below are damaged (missing, reversed or nested), so the "
+                    + "app left this file alone. Delete every line from “# === distractorRemover START” through "
+                    + "“# === distractorRemover END ===”, keep your own lines, and Save. Blocking is then written "
+                    + "again.\n\n" + note
+            }
+            guard let edited = Dialogs.editText("Hosts File", note, text: current, ok: "Save"),
+                  edited != current else { return }
             switch await self.controller.saveEditedHosts(edited) {
             case .success:
                 break

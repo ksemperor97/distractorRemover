@@ -51,7 +51,6 @@ final class CountingBackend: HostsBackend {
     init(_ inner: HostsBackend) { self.inner = inner }
     func readHosts() throws -> String { reads += 1; return try inner.readHosts() }
     func write(domains: [String], allowPrompt: Bool) throws { writes += 1; try inner.write(domains: domains, allowPrompt: allowPrompt) }
-    func resetManagedSection(allowPrompt: Bool) throws -> String { try inner.resetManagedSection(allowPrompt: allowPrompt) }
     func replaceHosts(with text: String) throws -> URL { try inner.replaceHosts(with: text) }
 }
 
@@ -264,19 +263,30 @@ func runControllerChecks() async {
         expectEqual(rig.hostsText, Rig.base)
     }
 
-    await testAsync("a half-deleted managed section is backed up and repaired automatically") {
+    await testAsync("damaged markers leave hosts untouched until the user fixes them") {
         let rig = Rig()
         _ = await rig.controller.update(reason: "test", enablingManual)
-        let broken = Rig.base + AppConstants.markStart + "\n127.0.0.1\tstale.com\n"
-        try broken.write(to: rig.hosts, atomically: true, encoding: .utf8)
+        let damaged = Rig.base + AppConstants.markEnd + "\n10.0.0.5 nas.local\n" + AppConstants.markStart
+            + "\n192.168.0.7 printer.local\n"
+        try damaged.write(to: rig.hosts, atomically: true, encoding: .utf8)
+        let writes = rig.counting.writes
         rig.uptime += 31
         await rig.controller.tick()
-        expectEqual(rig.controller.applyStatus, .ok)
-        check(HostsFile.matches(rig.hostsText, domains: Domains.expanded(["youtube.com"])), rig.hostsText)
-        check(!rig.hostsText.contains("stale.com"))
-        let backups = try FileManager.default.contentsOfDirectory(atPath: rig.dir.path)
-            .filter { $0.hasPrefix("hosts.distractorremover-backup-") }
-        expectEqual(backups.count, 1)
+        expectEqual(rig.hostsText, damaged)
+        expectEqual(rig.counting.writes, writes, "wrote to a damaged file")
+        check(rig.controller.hostsNeedManualFix)
+        expectEqual(rig.controller.statusTitle(), "Hosts file needs fixing — click to edit")
+        // Stopping blocking must not touch it either.
+        let calendar = seoul
+        _ = await rig.controller.update(reason: "stop") { $0.stoppingBlocking(at: $1, calendar: calendar) }
+        expectEqual(rig.hostsText, damaged)
+        // The user removes the marker lines in the hosts editor.
+        let fixed = Rig.base + "10.0.0.5 nas.local\n192.168.0.7 printer.local\n"
+        _ = await rig.controller.update(reason: "start") { c, _ in c.startingBlocking() }
+        guard case .success = await rig.controller.saveEditedHosts(fixed) else { return check(false, "save failed") }
+        check(!rig.controller.hostsNeedManualFix)
+        check(rig.hostsText.hasPrefix(fixed), rig.hostsText)
+        check(HostsFile.matches(rig.hostsText, domains: Domains.expanded(["youtube.com"])))
     }
 
     await testAsync("editing the hosts file by hand backs it up and keeps blocking in place") {

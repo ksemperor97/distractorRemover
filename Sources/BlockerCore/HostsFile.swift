@@ -11,29 +11,37 @@ public enum HostsFile {
         public var endMarkers = 0
         /// Lines between the first start marker and the following end marker.
         public var sectionLines: [String] = []
+        /// Every START is closed by an END before the next START. Equal counts
+        /// alone are not enough: reversed or nested markers have no safe boundary.
+        public var isWellFormed = true
 
-        public var isComplete: Bool { startMarkers == endMarkers }
         public var hasSection: Bool { startMarkers > 0 }
     }
 
     public static func inspect(_ content: String) -> Inspection {
         var result = Inspection()
-        var inSection = false
+        var inside = false
+        var capturing = false
         var capturedFirst = false
         for line in content.components(separatedBy: "\n") {
             if line == AppConstants.markStart {
                 result.startMarkers += 1
-                inSection = !capturedFirst
+                if inside { result.isWellFormed = false }
+                inside = true
+                capturing = !capturedFirst
                 continue
             }
             if line == AppConstants.markEnd {
                 result.endMarkers += 1
-                if inSection { capturedFirst = true }
-                inSection = false
+                if !inside { result.isWellFormed = false }
+                if capturing { capturedFirst = true }
+                inside = false
+                capturing = false
                 continue
             }
-            if inSection { result.sectionLines.append(line) }
+            if capturing { result.sectionLines.append(line) }
         }
+        if inside { result.isWellFormed = false }
         return result
     }
 
@@ -46,6 +54,7 @@ public enum HostsFile {
     /// for an empty list, otherwise one complete section listing `domains`.
     public static func matches(_ content: String, domains: [String]) -> Bool {
         let inspection = inspect(content)
+        guard inspection.isWellFormed else { return false }
         if domains.isEmpty {
             return inspection.startMarkers == 0 && inspection.endMarkers == 0
         }

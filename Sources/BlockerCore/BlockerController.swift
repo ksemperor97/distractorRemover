@@ -22,9 +22,9 @@ public enum Outcome: Equatable {
 /// revert bookkeeping. Operations are serialized, and all blocking work
 /// (reading hosts, sudo, osascript) runs off the main thread.
 ///
-/// Problems repair themselves where that is safe: a damaged settings file is
-/// set aside and replaced with defaults, and a broken managed hosts section is
-/// backed up and rewritten.
+/// A damaged settings file is set aside and replaced with defaults. A hosts
+/// file whose markers are damaged is never rewritten: the user fixes it in
+/// the hosts editor, so none of their own lines can be lost.
 @MainActor
 public final class BlockerController {
     public private(set) var config: Config
@@ -36,6 +36,8 @@ public final class BlockerController {
     public private(set) var applyStatus: ApplyStatus
     public private(set) var lastError = ""
     public private(set) var retryCount = 0
+    /// The hosts markers are missing, reversed or nested; only a manual edit fixes it.
+    public private(set) var hostsNeedManualFix = false
 
     /// Called on the main actor after any visible state change.
     public var onChange: (() -> Void)?
@@ -129,6 +131,7 @@ public final class BlockerController {
 
     public func statusTitle() -> String {
         if configLoadError != nil { return "Settings file is damaged — see app.log" }
+        if hostsNeedManualFix { return "Hosts file needs fixing — click to edit" }
         if applyStatus.isFailing { return "Couldn’t update blocking — click to retry" }
         let next = nextScheduleChange()
         if actualBlocking {
@@ -226,12 +229,13 @@ public final class BlockerController {
         let domains = candidate.blockDomains(at: moment, calendar: calendar)
         do {
             var content = try await offMain { try self.backend.readHosts() }
-            if !HostsFile.inspect(content).isComplete {
-                // A half-deleted section has no reliable boundary; the helper
-                // backs up the whole file and strips every marker first.
-                let note = try await offMain { try self.backend.resetManagedSection(allowPrompt: allowPrompt) }
-                logger.warning("repaired an incomplete managed hosts section: \(note)")
-                content = try await offMain { try self.backend.readHosts() }
+            hostsNeedManualFix = !HostsFile.inspect(content).isWellFormed
+            if hostsNeedManualFix {
+                throw BlockerError.failed(
+                    "The distractorRemover marker lines in the hosts file are missing, reversed or nested, "
+                        + "so the file was left unchanged. Open Edit Hosts File… and delete every line from the "
+                        + "START marker through the END marker; blocking is then written again."
+                )
             }
             if !HostsFile.matches(content, domains: domains) {
                 try await offMain { try self.backend.write(domains: domains, allowPrompt: allowPrompt) }

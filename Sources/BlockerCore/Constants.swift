@@ -17,8 +17,9 @@ public enum AppConstants {
     public static let legacyLaunchAgentLabel = "com.sjk.distractorremover"
 
     public static let configSchemaVersion = 2
-    /// Helper versions that can apply/clear. Only the bundled version supports `--reset`.
-    public static let compatibleHelperVersions: Set<String> = ["2", "3"]
+    /// Installed helper versions the app can drive. v4 adds the marker-order check;
+    /// the app checks marker order itself before calling any version.
+    public static let compatibleHelperVersions: Set<String> = ["2", "3", "4"]
     /// Limit enforced by `privileged_helper.sh`.
     public static let maxDomains = 512
 

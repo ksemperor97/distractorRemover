@@ -67,6 +67,23 @@ func runHelperChecks() {
         }
         expectEqual(read(hosts), base)
     }
+    test("reversed or nested markers are rejected without modification") {
+        let start = AppConstants.markStart, end = AppConstants.markEnd
+        let layouts = [
+            "127.0.0.1 localhost\n\(end)\n10.0.0.5 nas.local\n\(start)\n192.168.0.7 printer.local\n",
+            "127.0.0.1 localhost\n\(start)\n\(start)\n127.0.0.1\ta.com\n\(end)\n\(end)\n10.0.0.5 nas.local\n",
+            "127.0.0.1 localhost\n\(start)\n127.0.0.1\ta.com\n\(end)\n\(end)\n10.0.0.5 nas.local\n",
+        ]
+        for layout in layouts {
+            let hosts = temporaryDirectory().appendingPathComponent("hosts")
+            try layout.write(to: hosts, atomically: true, encoding: .utf8)
+            for action in ["--clear", "--apply"] {
+                let result = runHelper(hosts, action, ["b.com"])
+                expectEqual(result.status, 12, "\(action): \(result.message)")
+                expectEqual(read(hosts), layout, action)
+            }
+        }
+    }
     test("incomplete marker is rejected without modification") {
         let broken = "127.0.0.1 localhost\n" + AppConstants.markStart + "\n"
         let hosts = temporaryDirectory().appendingPathComponent("hosts")

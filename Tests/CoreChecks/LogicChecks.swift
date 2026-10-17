@@ -80,9 +80,23 @@ func runHostsChecks() {
         let broken = base + AppConstants.markStart + "\n127.0.0.1\ta.com\n"
         check(!HostsFile.matches(broken, domains: []))
         check(!HostsFile.matches(broken, domains: ["a.com"]))
-        check(!HostsFile.inspect(broken).isComplete)
+        check(!HostsFile.inspect(broken).isWellFormed)
         let doubled = base + section + "\n" + section + "\n"
         check(!HostsFile.matches(doubled, domains: ["a.com", "www.a.com"]))
+    }
+    test("reversed, nested and orphan markers are malformed even when counts match") {
+        let start = AppConstants.markStart, end = AppConstants.markEnd
+        let body = HostsFile.sectionBody(for: ["a.com"]).joined(separator: "\n")
+        let layouts = [
+            "\(end)\n10.0.0.5 nas\n\(start)\n\(body)\n",           // reversed; body after START matches
+            "\(start)\n\(start)\n\(body)\n\(end)\n\(end)\n",       // nested
+            "\(start)\n\(body)\n\(end)\n\(end)\n\(start)\n",       // extra end, then orphan start
+        ]
+        for layout in layouts {
+            check(!HostsFile.inspect(layout).isWellFormed, layout)
+            check(!HostsFile.matches(layout, domains: ["a.com"]) && !HostsFile.matches(layout, domains: []), layout)
+        }
+        check(HostsFile.inspect("\(start)\n\(body)\n\(end)\n").isWellFormed)
     }
     test("markers must be whole lines") {
         let inline = "# note: " + AppConstants.markStart + "\n"

@@ -5,10 +5,10 @@ extension AppDelegate {
     func buildMenuItems() -> [NSMenuItem] {
         var items: [NSMenuItem] = []
 
-        // Status line; it becomes a retry button only when something failed.
+        // Status line; it becomes a button only when something failed.
         if controller.applyStatus.isFailing && controller.configLoadError == nil {
             items.append(ActionItem(controller.statusTitle(), symbol: "exclamationmark.triangle") { [unowned self] in
-                retry()
+                if controller.hostsNeedManualFix { editHostsFile() } else { retry() }
             })
         } else {
             items.append(.note(controller.statusTitle(), symbol: statusSymbol))
