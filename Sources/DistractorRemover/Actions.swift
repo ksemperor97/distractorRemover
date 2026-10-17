@@ -176,6 +176,32 @@ extension AppDelegate {
 
     // MARK: App
 
+    /// Quitting leaves the hosts file as it is and stops the schedule, so say so first.
+    func quit() {
+        let blocking = controller.actualBlocking
+        let scheduled = controller.config.schedule.enabled
+        guard blocking || scheduled else { return NSApp.terminate(nil) }
+        var lines: [String] = []
+        if blocking { lines.append("The sites stay blocked after distractorRemover quits.") }
+        if scheduled { lines.append("Your schedule won’t turn blocking on or off until you open distractorRemover again.") }
+        let buttons = blocking ? ["Quit", "Stop Blocking and Quit", "Cancel"] : ["Quit", "Cancel"]
+        let choice = Dialogs.show("Quit distractorRemover?", lines.joined(separator: "\n\n"), buttons: buttons)
+        switch buttons[choice] {
+        case "Quit":
+            NSApp.terminate(nil)
+        case "Stop Blocking and Quit":
+            let calendar = controller.calendar
+            perform {
+                let outcome = await self.controller.update(reason: "stop-and-quit") { config, now in
+                    config.stoppingBlocking(at: now, calendar: calendar)
+                }
+                if outcome.succeeded { NSApp.terminate(nil) } else { self.report(outcome) }
+            }
+        default:
+            break
+        }
+    }
+
     func toggleLoginItem() {
         let enable = !LoginItem.isEnabled(environment.paths)
         do {

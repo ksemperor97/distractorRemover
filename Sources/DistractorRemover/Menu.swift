@@ -38,7 +38,7 @@ extension AppDelegate {
                 toggleLoginItem()
             })
         }
-        items.append(ActionItem("Quit distractorRemover", key: "q") { NSApp.terminate(nil) })
+        items.append(ActionItem("Quit distractorRemover…", key: "q") { [unowned self] in quit() })
         return items
     }
 

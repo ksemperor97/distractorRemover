@@ -11,7 +11,7 @@ struct AppEnvironment {
     let broker: PrivilegeBroker
     let version: String
     /// `DISTRACTORREMOVER_DEBUG_SHOW`: open a UI surface at launch (menu,
-    /// menu-dump, schedule-editor, sites, hosts) for screenshots and CI.
+    /// menu-dump, schedule-editor, sites, hosts, quit) for screenshots and CI.
     let debugShow: String?
 
     static func make() -> AppEnvironment {

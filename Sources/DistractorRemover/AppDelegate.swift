@@ -133,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "schedule-editor": editSchedule()
         case "sites": editBlockedSites()
         case "hosts": editHostsFile()
+        case "quit": quit()
         default: logger.warning("unknown DISTRACTORREMOVER_DEBUG_SHOW value: \(what)")
         }
     }
