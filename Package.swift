@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "distractorRemover", targets: ["DistractorRemover"]),
+        .library(name: "BlockerCore", targets: ["BlockerCore"]),
     ],
     targets: [
         // Pure logic, persistence and the privileged-helper backend. No AppKit.
