@@ -24,11 +24,16 @@ SUDOERS=/etc/sudoers.d/distractorremover   # no dot in name (sudo ignores those)
 
 mkdir -p /usr/local/bin
 [ -f "$HELPER_SOURCE" ] || { echo "helper source missing" >&2; exit 66; }
+# VERSION= in privileged_helper.sh is the single source of the helper version.
+EXPECTED_VERSION=$(/bin/bash "$HELPER_SOURCE" --version)
+case "$EXPECTED_VERSION" in
+    ''|*[!0-9]*) echo "helper source reports an invalid version" >&2; exit 66 ;;
+esac
 
 # --- the privileged helper -------------------------------------------------
 TMP_HELPER=$(mktemp /usr/local/bin/.distractorremover-helper.XXXXXX)
 install -m 755 -o root -g wheel "$HELPER_SOURCE" "$TMP_HELPER"
-"$TMP_HELPER" --version | grep -qx '3' || {
+"$TMP_HELPER" --version | grep -qx "$EXPECTED_VERSION" || {
     rm -f "$TMP_HELPER"
     echo "helper version validation failed" >&2
     exit 4
@@ -97,10 +102,10 @@ chmod 440 "$TMP_SUDO"
 mv "$TMP_SUDO" "$SUDOERS"
 
 if ! /usr/bin/sudo -u "$USER_NAME" /usr/bin/sudo -n "$HELPER" --check \
-    | grep -qx 'ready 3'; then
+    | grep -qx "ready $EXPECTED_VERSION"; then
     echo "installed helper failed its NOPASSWD health check" >&2
     exit 6
 fi
 
 COMMITTED=true
-echo "installed v3"
+echo "installed v$EXPECTED_VERSION"

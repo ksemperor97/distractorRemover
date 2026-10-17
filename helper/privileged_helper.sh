@@ -5,7 +5,7 @@
 set -euo pipefail
 export LC_ALL=C
 
-VERSION=3
+VERSION=4
 HOSTS=/etc/hosts
 TEST_MODE=false
 if [ "$(id -u)" -ne 0 ] && [ -n "${DISTRACTORREMOVER_TEST_HOSTS:-}" ]; then
@@ -41,10 +41,15 @@ fi
 [ -f "$HOSTS" ] || { echo "hosts file missing" >&2; exit 11; }
 
 if [ "$ACTION" != "--reset" ]; then
-    starts=$(grep -Fxc "$MARK_START" "$HOSTS" 2>/dev/null || true)
-    ends=$(grep -Fxc "$MARK_END" "$HOSTS" 2>/dev/null || true)
-    [ "$starts" -eq "$ends" ] || {
-        echo "managed hosts section is incomplete; refusing to rewrite" >&2
+    # Every START must be followed by its END before the next START. Equal
+    # counts are not enough: reversed or nested markers would make the strip
+    # below delete the user's own lines. Leave such a file exactly as it is.
+    awk -v start="$MARK_START" -v end="$MARK_END" '
+        $0 == start { if (inside) { bad = 1; exit } inside = 1; next }
+        $0 == end { if (!inside) { bad = 1; exit } inside = 0; next }
+        END { if (bad || inside) exit 1 }
+    ' "$HOSTS" || {
+        echo "the distractorRemover markers in the hosts file are damaged (missing, reversed or nested); refusing to rewrite" >&2
         exit 12
     }
 fi
@@ -71,7 +76,7 @@ if [ "$ACTION" = "--reset" ]; then
         }
         $0 == start { managed = 1; next }
         $0 == end { managed = 0; next }
-        managed && $0 ~ /^(127\.0\.0\.1|::1)[[:space:]]+/ { next }
+        managed && $0 ~ /^(127\.0\.0\.1|::1)\t[a-z0-9.-]+$/ { next }   # only lines in the app format
         managed { managed = 0 }
         { emit($0) }
     ' "$HOSTS" > "$TMP"

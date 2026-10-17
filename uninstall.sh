@@ -1,5 +1,5 @@
 #!/bin/bash
-# Fully remove the installed app, launch agent, managed hosts section, and
+# Fully remove the installed app, login item, managed hosts section, and
 # password-free helper. Pass --remove-config to remove saved sites/schedules.
 set -euo pipefail
 
@@ -17,7 +17,7 @@ for arg in "$@"; do
 done
 
 if [ "$DRY_RUN" = true ]; then
-    echo "Would unload and remove: $HOME/Library/LaunchAgents/com.sjk.distractorremover.plist"
+    echo "Would remove the Open at Login item"
     echo "Would stop distractorRemover processes"
     echo "Would clear the distractorRemover /etc/hosts section"
     echo "Would remove helper and sudoers rule"
@@ -36,20 +36,23 @@ if [ "$ASSUME_YES" != true ]; then
     case "$answer" in y|Y|yes|YES) ;; *) echo "Cancelled."; exit 0 ;; esac
 fi
 
-PLIST="$HOME/Library/LaunchAgents/com.sjk.distractorremover.plist"
-launchctl unload "$PLIST" 2>/dev/null || true
-rm -f "$PLIST"
-pkill -f "distractor_remover.py" 2>/dev/null || true
+APP="/Applications/distractorRemover.app"
+if [ -x "$APP/Contents/MacOS/distractorRemover" ]; then
+    "$APP/Contents/MacOS/distractorRemover" --unregister-login-item || true
+fi
 pkill -x "distractorRemover" 2>/dev/null || true
 
-/usr/bin/osascript - "$DIR/uninstall_helper.sh" <<'APPLESCRIPT'
+# Prefer the scripts next to this file; fall back to the installed app's copy.
+UNINSTALL_HELPER="$DIR/helper/uninstall_helper.sh"
+[ -f "$UNINSTALL_HELPER" ] || UNINSTALL_HELPER="$APP/Contents/Resources/uninstall_helper.sh"
+/usr/bin/osascript - "$UNINSTALL_HELPER" <<'APPLESCRIPT'
 on run argv
     set scriptPath to item 1 of argv
     do shell script "/bin/bash " & quoted form of scriptPath & " --clear-hosts" with administrator privileges
 end run
 APPLESCRIPT
 
-if ! rm -rf "/Applications/distractorRemover.app" 2>/dev/null; then
+if ! rm -rf "$APP" 2>/dev/null; then
     /usr/bin/osascript -e 'do shell script "/bin/rm -rf /Applications/distractorRemover.app" with administrator privileges'
 fi
 
