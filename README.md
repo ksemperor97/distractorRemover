@@ -1,3 +1,5 @@
+<img src="docs/images/icon.png" width="96" alt="distractorRemover icon">
+
 # distractorRemover
 
 [![CI](https://github.com/ksemperor97/distractorRemover/actions/workflows/ci.yml/badge.svg)](https://github.com/ksemperor97/distractorRemover/actions/workflows/ci.yml)
@@ -73,7 +75,7 @@ DISTRACTORREMOVER_SANDBOX=/tmp/dr-sandbox dist/distractorRemover.app/Contents/Ma
 
 `DISTRACTORREMOVER_DEBUG_SHOW=menu|menu-dump|schedule-editor|sites|hosts|quit` opens that screen at launch (`menu-dump` prints the menu as text and quits). `DISTRACTORREMOVER_SANDBOX_PROMPT=cancel` simulates cancelling the password prompt.
 
-Layout: `Sources/BlockerCore` (logic, storage, helper backend; no AppKit), `Sources/AppText` (Korean/English wording), `Sources/DistractorRemover` (menu bar UI), `helper/` (privileged shell scripts).
+Layout: `Sources/BlockerCore` (logic, storage, helper backend; no AppKit), `Sources/AppText` (Korean/English wording), `Sources/DistractorRemover` (menu bar UI), `helper/` (privileged shell scripts), `scripts/make_icon.swift` (draws the app icon; run `swift scripts/make_icon.swift` to regenerate `Resources/AppIcon.icns` and `docs/images/icon.png`).
 
 ---
 
@@ -144,4 +146,4 @@ DISTRACTORREMOVER_SANDBOX=/tmp/dr-sandbox dist/distractorRemover.app/Contents/Ma
 
 `DISTRACTORREMOVER_DEBUG_SHOW=menu|menu-dump|schedule-editor|sites|hosts|quit`은 실행 직후 해당 화면을 열어요(`menu-dump`는 메뉴를 텍스트로 출력하고 종료). `DISTRACTORREMOVER_SANDBOX_PROMPT=cancel`은 암호 입력 취소를 흉내 내요.
 
-구성: `Sources/BlockerCore`(로직, 저장, helper 연동, AppKit 없음), `Sources/AppText`(한국어/영어 문구), `Sources/DistractorRemover`(메뉴바 UI), `helper/`(권한 셸 스크립트)
+구성: `Sources/BlockerCore`(로직, 저장, helper 연동, AppKit 없음), `Sources/AppText`(한국어/영어 문구), `Sources/DistractorRemover`(메뉴바 UI), `helper/`(권한 셸 스크립트), `scripts/make_icon.swift`(앱 아이콘을 그려요. `swift scripts/make_icon.swift`를 실행하면 `Resources/AppIcon.icns`와 `docs/images/icon.png`를 다시 만들어요)
