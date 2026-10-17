@@ -42,7 +42,11 @@ public final class BlockerController {
     /// Called on the main actor after any visible state change.
     public var onChange: (() -> Void)?
 
-    public let calendar: Calendar
+    /// Read on every use, so a time zone change applies immediately.
+    public var calendar: Calendar { calendarProvider() }
+    private let calendarProvider: () -> Calendar
+    private let followsSystemTimeZone: Bool
+    private var lastTimeZone: String
     private let store: ConfigStoring
     private let backend: HostsBackend
     private let logger: AppLogger
@@ -64,7 +68,7 @@ public final class BlockerController {
         logger: AppLogger,
         statusWriter: RuntimeStatusWriter? = nil,
         version: String = "development",
-        calendar: Calendar = .current,
+        calendar fixedCalendar: Calendar? = nil,
         now: @escaping () -> Date = Date.init,
         uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
@@ -73,7 +77,9 @@ public final class BlockerController {
         self.logger = logger
         self.statusWriter = statusWriter
         self.version = version
-        self.calendar = calendar
+        calendarProvider = fixedCalendar.map { calendar in { calendar } } ?? { Calendar.current }
+        followsSystemTimeZone = fixedCalendar == nil
+        lastTimeZone = (fixedCalendar ?? Calendar.current).timeZone.identifier
         self.now = now
         self.uptime = uptime
         applyStatus = .pending
@@ -174,11 +180,20 @@ public final class BlockerController {
     /// Periodic check. Cheap when nothing is due: no sudo, no disk writes.
     public func tick(reason: String = "timer", force: Bool = false) async {
         guard configLoadError == nil, force || operationsInFlight == 0 else { return }
+        // Foundation caches the system zone; re-read it so a change is noticed
+        // within one tick even if the change notification never arrives.
+        if followsSystemTimeZone { NSTimeZone.resetSystemTimeZone() }
+        let zone = calendar.timeZone.identifier
+        let zoneChanged = zone != lastTimeZone
+        if zoneChanged {
+            logger.info("time zone changed from \(lastTimeZone) to \(zone)")
+            lastTimeZone = zone
+        }
         let moment = now()
         let normalized = config.normalized(at: moment)
         let domains = normalized.blockDomains(at: moment, calendar: calendar)
         let due: Bool
-        if force {
+        if force || zoneChanged {
             due = true
         } else if applyStatus.isFailing {
             due = uptime() >= nextRetryAt   // back off: 5 s, 15 s, then every 30 s
@@ -189,6 +204,11 @@ public final class BlockerController {
                 || uptime() - lastVerifyAt >= AppConstants.verifyInterval
         }
         if due { await reconcile(reason: reason) }
+    }
+
+    /// The system time zone changed: re-evaluate the schedule in the new local time now.
+    public func timeZoneDidChange() async {
+        await tick(reason: "time-zone-change", force: true)
     }
 
     /// Saves a hand-edited hosts file (after a backup), then re-applies the

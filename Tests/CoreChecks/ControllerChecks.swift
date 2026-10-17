@@ -19,7 +19,7 @@ final class Rig {
     static let base = "127.0.0.1\tlocalhost\n"
 
     init(now: Date = at(2026, 7, 13, 10, 0), helperInstalled: Bool = true, config: String? = nil,
-         store: ((URL) -> ConfigStoring)? = nil) {
+         store: ((URL) -> ConfigStoring)? = nil, systemCalendar: Bool = false) {
         self.now = now
         try! Rig.base.write(to: dir.appendingPathComponent("hosts"), atomically: true, encoding: .utf8)
         if let config { try! config.write(to: dir.appendingPathComponent("config.json"), atomically: true, encoding: .utf8) }
@@ -30,7 +30,7 @@ final class Rig {
         counting = CountingBackend(backend)
         self.store = store?(dir.appendingPathComponent("config.json")) ?? FileConfigStore(url: dir.appendingPathComponent("config.json"))
         controller = BlockerController(
-            store: self.store, backend: counting, logger: NullLogger(), calendar: seoul,
+            store: self.store, backend: counting, logger: NullLogger(), calendar: systemCalendar ? nil : seoul,
             now: { [unowned self] in self.now }, uptime: { [unowned self] in self.uptime }
         )
     }
@@ -306,6 +306,30 @@ func runControllerChecks() async {
         let current = rig.hostsText
         expectEqual(await rig.controller.saveEditedHosts("garbage"), .failure(.cancelled))
         expectEqual(rig.hostsText, current)
+    }
+
+    await testAsync("a time zone change while running is picked up by the next tick") {
+        let previous = ProcessInfo.processInfo.environment["TZ"]
+        defer {
+            if let previous { setenv("TZ", previous, 1) } else { unsetenv("TZ") }
+            NSTimeZone.resetSystemTimeZone()
+        }
+        setenv("TZ", "Asia/Seoul", 1)
+        NSTimeZone.resetSystemTimeZone()
+        let config = """
+            {"sites": ["a.com"], "schedule": {"enabled": true,
+             "windows": [{"days": [0, 1, 2, 3, 4, 5, 6], "start": "09:00", "end": "18:00"}]}}
+            """
+        // 10:00 in Seoul is 21:00 the previous evening in New York.
+        let rig = Rig(now: at(2026, 7, 13, 10, 0), config: config, systemCalendar: true)
+        _ = await rig.controller.reconcile(reason: "startup")
+        check(rig.controller.actualBlocking, "not blocking at 10:00 Seoul")
+        setenv("TZ", "America/New_York", 1)   // no reset, no notification: only the timer
+        rig.uptime += 5
+        await rig.controller.tick()
+        expectEqual(rig.controller.calendar.timeZone.identifier, "America/New_York")
+        check(!rig.controller.actualBlocking, "still blocking at 21:00 New York")
+        check(!HostsFile.isBlocking(rig.hostsText))
     }
 
     await testAsync("helper status and installation") {

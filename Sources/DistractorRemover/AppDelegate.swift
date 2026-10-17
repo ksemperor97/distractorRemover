@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         workspace.addObserver(self, selector: #selector(systemDidWake), name: NSWorkspace.didWakeNotification, object: nil)
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(clockDidChange), name: .NSSystemClockDidChange, object: nil)
-        center.addObserver(self, selector: #selector(clockDidChange), name: .NSSystemTimeZoneDidChange, object: nil)
+        center.addObserver(self, selector: #selector(timeZoneDidChange), name: .NSSystemTimeZoneDidChange, object: nil)
 
         let backend = self.backend
         Task {
@@ -77,6 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func clockDidChange() {
         Task { await controller.tick(reason: "clock-change", force: true) }
+    }
+
+    @objc private func timeZoneDidChange() {
+        Task { await controller.timeZoneDidChange() }
     }
 
     // MARK: Status item
