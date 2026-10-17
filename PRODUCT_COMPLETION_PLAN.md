@@ -21,7 +21,12 @@ v2.0.0 Swift 네이티브 재작성 완료:
 - [x] `swift run CoreChecks` 검사와 GitHub Actions CI, 샌드박스 실행 모드
 - [x] 메뉴 단순화: 사이트 텍스트 편집, Start/Stop Blocking, Schedule…, Edit Hosts File…만 남김
 - [x] Stop Blocking은 수동·스케줄 차단을 모두 해제하고 스케줄은 다음 구간부터 다시 적용
-- [x] Status & Repair, Reset, Password-free 토글, 개별 사이트 메뉴 제거 → 자동 재시도·관리 구간 자동 복구·손상 설정 자동 보관으로 대체
+- [x] Status & Repair, Reset, Password-free 토글, 개별 사이트 메뉴 제거 → 자동 재시도·손상 설정 자동 보관으로 대체
+- [x] 표시 줄 순서·중첩 검증(helper v4): 손상된 hosts는 건드리지 않고 hosts 파일 편집으로 안내 (자동 복구 제거)
+- [x] 실행 중 시간대 변경 반영(5초 tick마다 시스템 시간대 재확인)
+- [x] 종료 전 안내: 차단 유지·스케줄 중지 설명, 차단 해제 후 종료 선택지
+- [x] 한국어/영어 UI와 언어 (Language) 설정(시스템 설정 따름/한국어/English, 즉시 적용), 시간 형식 언어별
+- [x] README 영어 먼저·한국어, 언어별 스크린샷(docs/images/en, ko)
 
 ## 구현 현황 — 2026-07-13
 
