@@ -74,9 +74,18 @@ public struct Config: Equatable {
 
     // MARK: - Transitions used by the UI
 
-    /// Manual off; an active schedule window is paused until it ends. A
-    /// schedule that never turns off on its own is disabled instead.
-    public func turningOffAll(at now: Date, calendar: Calendar = .current) -> Config {
+    /// Start Blocking: manual on, and a paused schedule window resumes too.
+    public func startingBlocking() -> Config {
+        var copy = self
+        copy.manualEnabled = true
+        copy.scheduleOverrideUntil = nil
+        return copy
+    }
+
+    /// Stop Blocking turns off both kinds: manual off, and an active schedule
+    /// window is paused until it ends, so the schedule still applies next time.
+    /// A schedule that never turns off on its own is disabled instead.
+    public func stoppingBlocking(at now: Date, calendar: Calendar = .current) -> Config {
         var copy = self
         copy.manualEnabled = false
         if scheduleActive(at: now, calendar: calendar) {
@@ -93,18 +102,11 @@ public struct Config: Equatable {
         return copy
     }
 
-    public func withSchedule(enabled: Bool) -> Config {
+    /// Saving the schedule editor. A schedule without windows is off.
+    public func withSchedule(enabled: Bool, windows: [ScheduleWindow]) -> Config {
         var copy = self
-        copy.schedule.enabled = enabled && !schedule.windows.isEmpty
-        copy.scheduleOverrideUntil = nil
-        return copy
-    }
-
-    public func withScheduleWindows(_ windows: [ScheduleWindow]) -> Config {
-        var copy = self
-        copy.schedule.windows = windows
-        if windows.isEmpty { copy.schedule.enabled = false }
-        copy.scheduleOverrideUntil = nil
+        copy.schedule = Schedule(enabled: enabled && !windows.isEmpty, windows: windows)
+        if copy.schedule != schedule { copy.scheduleOverrideUntil = nil }
         return copy
     }
 }

@@ -44,33 +44,3 @@ enum LoginItem {
         return nil
     }
 }
-
-enum SystemActions {
-    static func openInTextEdit(_ file: URL) -> ProcessResult {
-        ProcessRunner.run("/usr/bin/open", ["-a", "TextEdit", file.path])
-    }
-
-    static func openFolder(_ folder: URL) {
-        try? FileManager.default.createDirectory(
-            at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
-        )
-        NSWorkspace.shared.open(folder)
-    }
-
-    /// Opens Terminal running `sudo nano` on the hosts file (fixed command).
-    static func editInTerminal(_ file: URL, backup: URL, useSudo: Bool) -> ProcessResult {
-        let editor = (useSudo ? "sudo /usr/bin/nano " : "/usr/bin/nano ") + ProcessRunner.shellQuote(file.path)
-        let command = [
-            "echo " + ProcessRunner.shellQuote("Backup created: \(backup.path)"),
-            "echo " + ProcessRunner.shellQuote("nano: save with Control-O, Enter; exit with Control-X"),
-            editor,
-        ].joined(separator: " ; ")
-        let script = """
-        tell application "Terminal"
-        activate
-        do script \(ProcessRunner.appleScriptString(command))
-        end tell
-        """
-        return ProcessRunner.run("/usr/bin/osascript", ["-e", script])
-    }
-}

@@ -19,6 +19,9 @@ v2.0.0 Swift 네이티브 재작성 완료:
 - [x] SMAppService 기반 Open at Login, v1 LaunchAgent 정리
 - [x] v1 설정·helper v2/v3·인스턴스 잠금 호환
 - [x] `swift run CoreChecks` 검사와 GitHub Actions CI, 샌드박스 실행 모드
+- [x] 메뉴 단순화: 사이트 텍스트 편집, Start/Stop Blocking, Schedule…, Edit Hosts File…만 남김
+- [x] Stop Blocking은 수동·스케줄 차단을 모두 해제하고 스케줄은 다음 구간부터 다시 적용
+- [x] Status & Repair, Reset, Password-free 토글, 개별 사이트 메뉴 제거 → 자동 재시도·관리 구간 자동 복구·손상 설정 자동 보관으로 대체
 
 ## 구현 현황 — 2026-07-13
 

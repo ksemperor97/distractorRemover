@@ -6,7 +6,7 @@
 
 집중을 방해하는 웹 서비스를 macOS 메뉴바에서 차단하고, 요일·시간대에 따라 자동으로 켜고 끄는 작은 앱입니다. 기존 `/etc/hosts` 내용은 보존하고 distractorRemover 전용 관리 구간만 추가·제거합니다.
 
-v2.0.0은 Python(rumps/PyObjC) 버전을 Swift + AppKit으로 다시 작성한 것입니다. 앱 크기는 24 MB에서 1 MB 미만으로 줄었고, Python 런타임 없이 실행됩니다. v1.x의 설정 파일, 설치된 password-free helper(v2/v3), 자동 실행 LaunchAgent를 그대로 이어받습니다.
+v2.0.0은 Python(rumps/PyObjC) 버전을 Swift + AppKit으로 다시 작성하고, 메뉴를 사이트 편집·차단 시작/해제·스케줄로 단순화한 것입니다. 앱 크기는 24 MB에서 1 MB 미만으로 줄었고, Python 런타임 없이 실행됩니다. v1.x의 설정 파일, 설치된 password-free helper(v2/v3), 자동 실행 LaunchAgent를 그대로 이어받습니다.
 
 ## 설치
 
@@ -18,55 +18,40 @@ cd distractorRemover
 ./build_app.sh --install
 ```
 
-`/Applications/distractorRemover.app`에 설치하고 실행합니다. 빌드만 하려면 `./build_app.sh`를 실행하며, 결과는 `dist/distractorRemover.app`에 생깁니다. 로그인 시 자동 실행은 메뉴의 **Open at Login**에서 켭니다.
+`/Applications/distractorRemover.app`에 설치하고 실행합니다. 빌드만 하려면 `./build_app.sh`를 실행하며, 결과는 `dist/distractorRemover.app`에 생깁니다.
 
-## 현재 상태 확인
+## 사용법
 
-메뉴바 아이콘(SF Symbols):
-
-- **shield** — 실제 hosts 차단이 꺼져 있음
-- **shield.fill** — 실제 hosts 차단이 켜져 있음
-- **exclamationmark.triangle** — 요청한 상태와 실제 hosts 상태가 다르거나 적용에 실패함
-
-메뉴 최상단에는 현재 원인과 다음 전환을 표시합니다.
-
-- `Blocking — Manual` / `Blocking — Schedule` / `Blocking — Manual + Schedule`
-- `Not blocking — next change 22:00`
-- `Update failed — currently not blocking`
-
-오류가 발생하면 앱은 5초, 15초, 이후 30초 간격으로 재시도합니다. 정상 상태에서는 30초마다 hosts 파일만 읽어 검증하며, sudo 호출이나 디스크 쓰기는 실제 변경이 있을 때만 일어납니다. **Status & Repair…**는 요청 상태와 실제 hosts 상태의 일치 여부, helper와 자동 실행 상태, 최근 오류를 한곳에서 보여주고 즉시 재적용하거나 관리 구간을 초기화할 수 있게 합니다.
-
-설정 JSON이 손상되면 앱은 파일을 덮어쓰지 않고 모든 설정 변경을 잠급니다. **Recover Damaged Configuration…**에서 원본을 `.corrupt-날짜` 파일로 백업한 뒤 명시적으로 초기화할 수 있습니다. hosts 관리 마커가 일부만 남은 경우에는 **Reset Managed Hosts Section…**이 전체 hosts 백업을 만든 후 관리 구간을 복구합니다.
-
-## 기본 사용법
+메뉴는 이것뿐입니다.
 
 | 메뉴 | 동작 |
 |---|---|
-| **Manual Blocking** (체크 표시) | 수동 차단만 켜거나 끔 |
-| **Turn Off All Blocking…** | 수동 차단을 끄고 현재 스케줄 구간을 끝날 때까지 일시 해제 |
-| **Add Site…** (⌘N) | 서비스 또는 도메인 추가 |
-| **서비스 항목 클릭** | 차단이 꺼져 있을 때 해당 서비스 삭제 (차단 중에는 자물쇠 표시) |
-| **Schedule** | 자동 차단 시간대, 스케줄 켜기/끄기, Password-Free Mode |
-| **Hosts File** | 앱 차단 목록 텍스트 편집, 실제 hosts 열기·관리자 편집, 백업 폴더 열기 |
-| **Open at Login** | 로그인 시 자동 실행 (시스템 설정 → 일반 → 로그인 항목에 표시) |
-| **Status & Repair…** | 요청 상태와 실제 적용 상태 확인 및 복구 |
-| **Quit distractorRemover** (⌘Q) | 차단 유지 후 종료 또는 차단 해제 후 종료 선택 |
+| 상태 줄 | `Blocking`, `Blocking until 18:00 (schedule)`, `Not blocking · schedule starts Mon 09:00` 등 |
+| **Start Blocking** / **Stop Blocking…** | 지금 차단을 시작하거나 멈춤 |
+| **Edit Blocked Sites…** (⌘E) | 차단할 사이트를 한 줄에 하나씩 텍스트로 편집 |
+| **Schedule…** | 요일·시간대 자동 차단 설정 |
+| **Edit Hosts File…** | 문제가 생겼을 때 hosts 파일 전체를 직접 편집 |
+| **Open at Login** | 로그인 시 자동 실행 (스케줄이 재부팅 후에도 동작하려면 켜 두세요) |
 
-수동 차단과 스케줄 차단은 독립입니다. 둘 중 하나라도 활성 상태면 차단합니다. 수동 차단을 꺼도 현재 스케줄 구간이 활성 상태면 차단은 유지됩니다.
+메뉴바 아이콘은 실제 차단 중이면 채워진 방패, 아니면 빈 방패, 적용에 실패하면 경고 삼각형입니다.
 
-### 전체 해제와 충동 방지
+### 차단 시작과 해제
 
-차단이 실제로 적용된 동안에는 다음 규칙을 사용합니다.
+차단은 두 종류입니다. **Start Blocking**으로 켜는 수동 차단과, **Schedule…**에서 정한 시간대에 자동으로 켜지는 스케줄 차단입니다. 둘 중 하나라도 켜져 있으면 차단합니다.
 
-- 사이트 추가는 가능
-- 개별 서비스 삭제는 잠금
-- 수동 차단 해제는 확인 필요
-- 활성 스케줄 비활성화는 확인 필요
-- **Turn Off All Blocking…**은 한 번 더 확인한 후 현재의 모든 차단을 해제
+**Stop Blocking…**은 둘 다 해제합니다. 수동 차단을 끄고, 지금 진행 중인 스케줄 구간은 그 구간이 끝날 때까지 쉬게 합니다. 스케줄 자체는 그대로 남아서 다음 구간(예: 다음 날 09:00)이 되면 다시 차단합니다. 해제 전에 한 번 확인을 묻고, 확인 창에 스케줄이 다시 켜지는 시각을 보여 줍니다.
 
-전체 해제를 선택해도 향후 스케줄은 유지됩니다. 현재 활성 구간만 종료 시각까지 일시 중지하며, Schedule 메뉴의 **Resume Current Window**로 즉시 다시 적용할 수 있습니다.
+차단 중에는 사이트를 추가할 수 있지만 지울 수는 없습니다. 지우려면 먼저 차단을 멈춥니다.
 
-관리자 인증창을 취소하면 설정과 hosts 모두 변경 전 상태 그대로 남습니다.
+### 문제가 생겼을 때
+
+대부분은 앱이 알아서 복구합니다.
+
+- hosts 적용에 실패하면 5초, 15초, 이후 30초 간격으로 다시 시도합니다. 상태 줄이 `Couldn’t update blocking — click to retry`로 바뀌고, 누르면 바로 다시 시도합니다.
+- hosts 파일의 distractorRemover 구간이 일부만 지워져 있으면 전체 hosts를 백업한 뒤 그 구간을 다시 씁니다.
+- 설정 파일이 손상되어 있으면 원본을 `config.json.corrupt-날짜`로 보관하고 빈 설정으로 시작하며, 처음 한 번 알려 줍니다.
+
+그래도 이상하면 **Edit Hosts File…**로 hosts 파일 전체를 텍스트로 고칠 수 있습니다. 저장 전에 원본을 `~/Library/Application Support/distractorRemover/hosts-backups/`에 백업하고, 저장할 때 관리자 암호를 묻습니다. distractorRemover 표시 줄 사이의 내용은 차단 사이트 목록에 맞게 자동으로 다시 쓰입니다.
 
 ## 서비스 프리셋과 사용자 도메인
 
@@ -82,42 +67,24 @@ YouTube, Instagram, X/Twitter, Reddit, TikTok, Facebook은 보조 진입 도메�
 
 hosts 파일은 와일드카드를 지원하지 않으므로 임의의 모든 하위 도메인을 자동 차단한다고 보장하지는 않습니다. 프리셋에 광범위한 공용 CDN은 포함하지 않아 다른 서비스의 오작동을 피합니다.
 
-### 텍스트로 차단 목록과 hosts 편집
+**Edit Blocked Sites…**에는 `/etc/hosts`에서 복사한 `127.0.0.1`·`::1` 행도 붙여넣을 수 있고, `#`으로 시작하는 줄은 무시합니다.
 
-**Hosts File** 메뉴:
+## 스케줄
 
-- **Edit Block List as Text…** — 한 줄에 도메인 또는 URL 하나씩 편집합니다. `/etc/hosts`에서 복사한 `127.0.0.1`·`::1` 행도 붙여넣을 수 있습니다. 실제 차단 중에는 기존 항목 삭제가 잠기지만 새 항목 추가는 가능합니다.
-- **Open Hosts File in TextEdit…** — 현재 시스템 파일을 읽기용으로 엽니다.
-- **Edit Hosts File as Administrator…** — 전체 파일을 비공개 백업한 뒤 Terminal에서 `sudo nano /etc/hosts`를 엽니다.
-- **Open Hosts Backup Folder…** — 직접 편집 전에 생성된 백업을 Finder에서 엽니다.
+**Schedule…** 창에서:
 
-distractorRemover 시작·끝 마커 사이의 행은 앱 관리 구간이며 다음 조정 때 설정에 맞게 다시 작성됩니다. 지속할 항목은 **Edit Block List as Text…**에서 편집합니다.
+1. **Block sites during these times**를 켜고
+2. 요일(또는 Weekdays, Weekends, Every day)과 From/to 시간을 고른 뒤 **Add Window**
+3. **Save**
 
-## 시간대 자동 차단
+`22:00 → 06:00`처럼 자정을 넘는 구간도 됩니다. 앱은 5초마다 시각을 확인하고, 잠자기 해제나 시간·시간대 변경 때도 바로 다시 맞춥니다. 앱이 꺼져 있는 동안에는 스케줄이 바뀌지 않으므로 **Open at Login**을 켜 두세요.
 
-**Schedule → Edit Time Windows…**에서 편집 창을 엽니다.
+스케줄을 처음 켤 때 한 번만 관리자 암호를 묻습니다. 앱이 혼자서 차단을 켜고 끄려면 작은 helper가 필요하기 때문입니다.
 
-1. Mon~Sun 또는 Weekdays, Weekends, Every day 프리셋으로 요일 선택
-2. From/to 시간 선택기로 시간 범위 지정
-3. **Add Window**로 항목 추가, **Remove**로 삭제
-4. **Save**
+- `/usr/local/bin/distractorremover-helper` — root 소유, distractorRemover 구간만 수정 가능
+- `/etc/sudoers.d/distractorremover` — 이 helper만 암호 없이 실행 허용
 
-`22:00 → 06:00`처럼 자정을 넘는 구간과 일요일에서 월요일로 넘어가는 구간을 지원합니다. 스케줄을 켜면 현재 시각을 즉시 적용하고 이후 5초마다 상태 변화를 확인합니다. 잠자기 해제, 시스템 시간·시간대 변경 시에는 즉시 다시 조정합니다.
-
-## Password-free mode
-
-`/etc/hosts` 수정에는 관리자 권한이 필요합니다. 수동 변경은 macOS 관리자 인증창을 사용할 수 있지만, 무인 스케줄에는 Password-free mode가 필요합니다. 스케줄을 처음 켤 때 관리자 인증을 한 번 거치면 다음을 설치합니다.
-
-- `/usr/local/bin/distractorremover-helper` — `root:wheel`, 실행 중 변경 불가
-- `/etc/sudoers.d/distractorremover` — 해당 helper만 NOPASSWD로 실행 허용
-
-hosts 파일은 항상 `helper/privileged_helper.sh` 하나만 작성합니다. Password-free mode에서는 설치된 helper를 `sudo -n`으로, 그렇지 않으면 앱에 번들된 같은 스크립트를 관리자 인증창 뒤에서 실행합니다. 앱은 결과 hosts 파일을 다시 읽어 요청 상태와 정확히 일치하는지만 검증합니다. helper는 검증된 도메인 목록만 표준 입력으로 받고 관리 구간만 원자적으로 갱신하며, Reset 전에는 전체 hosts 백업을 만듭니다.
-
-helper 버전은 `privileged_helper.sh`의 `VERSION=` 한 곳에서만 정의합니다. 이전 v2 helper는 계속 사용할 수 있고, Schedule 메뉴에서 번들 버전으로 업그레이드할 수 있습니다. 업그레이드 도중 실패하면 이전 helper와 sudoers 쌍을 복원합니다.
-
-앱은 helper가 root 소유의 일반 파일이고 group/world writable이 아니며, NOPASSWD health check가 성공해야 Password-free mode를 켜진 것으로 표시합니다. 이 확인 결과는 캐시하고 설치·제거·실패 시에만 다시 확인합니다.
-
-Password-free mode를 끄면 활성 스케줄을 먼저 끈 후 helper와 sudoers 규칙을 제거합니다. 인증 취소나 중간 실패 시 이전 스케줄 상태를 복구합니다.
+helper는 검증된 도메인 목록만 받아 관리 구간만 원자적으로 바꿉니다. hosts의 관리 구간은 항상 이 스크립트(`helper/privileged_helper.sh`)가 쓰며, helper가 없을 때는 같은 스크립트를 관리자 인증창 뒤에서 실행합니다. helper 버전은 스크립트의 `VERSION=` 한 곳에서만 정합니다. helper를 지우려면 아래 `uninstall.sh`를 씁니다.
 
 ## 완전 제거
 
@@ -145,7 +112,7 @@ Command Line Tools에는 XCTest와 swift-testing 매크로 플러그인이 없�
 DISTRACTORREMOVER_SANDBOX=/tmp/dr-sandbox dist/distractorRemover.app/Contents/MacOS/distractorRemover
 ```
 
-`/tmp/dr-sandbox/hosts`와 `/tmp/dr-sandbox/support/`를 대신 사용하며, helper 스크립트를 관리자 권한 없이 그 파일에 대해 실행합니다. `DISTRACTORREMOVER_SANDBOX_PROMPT=cancel`은 관리자 인증 취소를, `DISTRACTORREMOVER_DEBUG_SHOW=menu|schedule-editor|block-list|status`는 실행 직후 해당 화면 열기를 흉내냅니다.
+`/tmp/dr-sandbox/hosts`와 `/tmp/dr-sandbox/support/`를 대신 사용하며, helper 스크립트를 관리자 권한 없이 그 파일에 대해 실행합니다. `DISTRACTORREMOVER_SANDBOX_PROMPT=cancel`은 관리자 인증 취소를 흉내 내고, `DISTRACTORREMOVER_DEBUG_SHOW=menu|menu-dump|schedule-editor|sites|hosts`는 실행 직후 해당 화면을 엽니다(`menu-dump`는 메뉴를 텍스트로 출력하고 종료).
 
 공개 배포용 Developer ID 서명은 `CODESIGN_IDENTITY="Developer ID Application: …" ./build_app.sh`로 지정할 수 있으며, notarization은 별도 단계입니다.
 
@@ -154,7 +121,8 @@ DISTRACTORREMOVER_SANDBOX=/tmp/dr-sandbox dist/distractorRemover.app/Contents/Ma
 - 도메인 기반 차단이므로 IP 직접 접속은 막지 못합니다.
 - 이미 열린 연결이나 브라우저 DNS 캐시 때문에 잠시 접속될 수 있습니다.
 - 앱이 종료된 동안에는 스케줄 전환이 일어나지 않습니다. 현재 hosts 상태는 유지됩니다.
-- **Open at Login**은 로그인 시 실행만 담당하고 비정상 종료 후 자동 재시작은 하지 않습니다. v1.x에서 설정한 LaunchAgent가 남아 있으면 그쪽은 계속 재시작을 담당하며, **Open at Login**을 바꾸면 정리됩니다.
+- **Open at Login**은 로그인 시 실행만 담당하고 비정상 종료 후 자동 재시작은 하지 않습니다. v1.x에서 설정한 LaunchAgent가 남아 있으면 계속 동작하며, **Open at Login**을 바꾸면 정리됩니다.
+- 종료(Quit)해도 현재 hosts 상태는 그대로 남습니다. 차단을 풀고 끄려면 먼저 **Stop Blocking…**을 누릅니다.
 - 메뉴바가 가득 차 있으면 macOS가 상태 아이콘을 숨길 수 있습니다. 다른 메뉴바 항목을 줄이거나 ⌘-드래그로 순서를 바꾸세요.
 - 관리자 권한을 가진 사용자의 고의적인 우회를 완전히 막는 도구가 아니라, 일상적인 충동에 마찰을 추가하는 도구입니다.
 
@@ -177,8 +145,8 @@ Sources/BlockerCore/          AppKit에 의존하지 않는 핵심 (검사 대�
   ConfigCodec.swift           config.json 읽기·쓰기, v1 마이그레이션, 엄격한 검증
   Storage.swift               원자적 저장, 손상 설정 격리, hosts 백업, 인스턴스 잠금
   Privilege.swift             sudo/osascript 및 샌드박스 권한 실행
-  HelperHostsBackend.swift    helper를 통한 hosts 갱신, helper 상태 캐시·설치·제거
-  BlockerController.swift     직렬화된 reconcile, 재시도, 런타임 상태 기록
+  HelperHostsBackend.swift    helper를 통한 hosts 갱신, 수동 편집 저장, helper 상태 캐시·설치
+  BlockerController.swift     직렬화된 reconcile, 재시도, 자동 복구, 런타임 상태 기록
 Sources/DistractorRemover/    메뉴바 앱 (AppKit)
   AppDelegate.swift, Menu.swift, Actions.swift, Dialogs.swift,
   ScheduleEditor.swift, SystemIntegration.swift, AppEnvironment.swift, main.swift

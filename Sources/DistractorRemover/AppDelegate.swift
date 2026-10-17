@@ -20,7 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let paths = environment.paths
         logger = FileLogger(url: paths.log)
         backend = HelperHostsBackend(
-            hostsFile: paths.hostsFile, scripts: environment.scripts,
+            hostsFile: paths.hostsFile, scripts: environment.scripts, backupDirectory: paths.hostsBackups,
             broker: environment.broker, logger: logger
         )
         controller = BlockerController(
@@ -63,6 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Warm the helper-status cache off the main thread (it runs sudo).
             await Task.detached { _ = backend.refreshHelperStatus() }.value
             await controller.reconcile(reason: "startup")
+            if let notice = controller.startupNotice {
+                controller.clearStartupNotice()
+                Dialogs.warn("Settings were reset", notice)
+            }
             if let show = environment.debugShow { debugShow(show) }
         }
     }
@@ -111,10 +115,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "menu":
             // Popped at a fixed spot: a crowded menu bar may hide the status item.
             menuNeedsUpdate(menu)
+            Dialogs.bringToFront()
             menu.popUp(positioning: nil, at: NSPoint(x: 200, y: 1000), in: nil)
+        case "menu-dump":
+            // Prints the menu as text and quits (used by CI and for review).
+            menuNeedsUpdate(menu)
+            for item in menu.items {
+                let mark = item.state == .on ? "[x] " : ""
+                print(item.isSeparatorItem ? "----" : "\(item.isEnabled ? "" : "(i) ")\(mark)\(item.title)")
+            }
+            fflush(stdout)
+            NSApp.terminate(nil)
         case "schedule-editor": editSchedule()
-        case "block-list": editBlockListAsText()
-        case "status": showStatus()
+        case "sites": editBlockedSites()
+        case "hosts": editHostsFile()
         default: logger.warning("unknown DISTRACTORREMOVER_DEBUG_SHOW value: \(what)")
         }
     }

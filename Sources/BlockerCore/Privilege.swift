@@ -69,6 +69,9 @@ public protocol PrivilegeBroker: AnyObject {
     func runInstalledHelper(_ action: String, stdinLines: [String]) -> ProcessResult
     /// Runs a bundled script as root after one native administrator prompt.
     func runAsAdministrator(_ script: URL, arguments: [String], stdinLines: [String]) -> ProcessResult
+    /// Overwrites `destination` with `source` as root after one administrator
+    /// prompt (the manual hosts editor). Never password-free.
+    func replaceAsAdministrator(_ destination: URL, with source: URL) -> ProcessResult
 }
 
 public final class SystemPrivilegeBroker: PrivilegeBroker {
@@ -109,6 +112,18 @@ public final class SystemPrivilegeBroker: PrivilegeBroker {
             let printf = (["printf", "%s\\n"] + stdinLines).map(ProcessRunner.shellQuote).joined(separator: " ")
             command = "\(printf) | \(command)"
         }
+        return runShellAsAdministrator(command)
+    }
+
+    public func replaceAsAdministrator(_ destination: URL, with source: URL) -> ProcessResult {
+        // cp onto the existing file keeps its owner and mode.
+        let copy = ["/bin/cp", source.path, destination.path].map(ProcessRunner.shellQuote).joined(separator: " ")
+        return runShellAsAdministrator(
+            "\(copy) && { dscacheutil -flushcache || true; killall -HUP mDNSResponder || true; }"
+        )
+    }
+
+    private func runShellAsAdministrator(_ command: String) -> ProcessResult {
         let source = "do shell script \(ProcessRunner.appleScriptString(command)) with administrator privileges"
         return ProcessRunner.run("/usr/bin/osascript", ["-e", source])
     }
@@ -174,6 +189,19 @@ public final class SandboxPrivilegeBroker: PrivilegeBroker {
             return ProcessResult(status: 0, stdout: "removed", stderr: "")
         default:
             return runScript(script, arguments, stdinLines)
+        }
+    }
+
+    public func replaceAsAdministrator(_ destination: URL, with source: URL) -> ProcessResult {
+        promptCount += 1
+        if promptResponse == .cancel {
+            return ProcessResult(status: 1, stdout: "", stderr: "execution error: User canceled. (-128)")
+        }
+        do {
+            try Data(contentsOf: source).write(to: destination)
+            return ProcessResult(status: 0, stdout: "", stderr: "")
+        } catch {
+            return ProcessResult(status: 1, stdout: "", stderr: error.localizedDescription)
         }
     }
 }

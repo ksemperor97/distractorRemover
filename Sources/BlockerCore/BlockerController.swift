@@ -21,10 +21,17 @@ public enum Outcome: Equatable {
 /// administrator prompt leaves the current config untouched, so there is no
 /// revert bookkeeping. Operations are serialized, and all blocking work
 /// (reading hosts, sudo, osascript) runs off the main thread.
+///
+/// Problems repair themselves where that is safe: a damaged settings file is
+/// set aside and replaced with defaults, and a broken managed hosts section is
+/// backed up and rewritten.
 @MainActor
 public final class BlockerController {
     public private(set) var config: Config
+    /// Set only if a damaged settings file could not even be set aside.
     public private(set) var configLoadError: String?
+    /// One-time message for the user (e.g. a damaged settings file was replaced).
+    public private(set) var startupNotice: String?
     public private(set) var actualBlocking = false
     public private(set) var applyStatus: ApplyStatus
     public private(set) var lastError = ""
@@ -67,22 +74,33 @@ public final class BlockerController {
         self.calendar = calendar
         self.now = now
         self.uptime = uptime
+        applyStatus = .pending
         do {
             config = try store.load()
-            applyStatus = .pending
         } catch {
-            let message = (error as? ConfigLoadError)?.description ?? "\(error)"
-            config = Config()
-            configLoadError = message
-            applyStatus = .error
-            lastError = message
-            logger.error("configuration recovery required: \(message)")
+            let reason = (error as? ConfigLoadError)?.description ?? "\(error)"
+            logger.error("settings file unreadable: \(reason)")
+            do {
+                let (fresh, backup) = try store.quarantineAndReset()
+                config = fresh
+                startupNotice = "Your settings file was damaged, so distractorRemover started with empty settings. "
+                    + "The old file was kept at:\n\(backup.path)"
+                logger.warning("damaged settings moved to \(backup.path)")
+            } catch {
+                config = Config()
+                configLoadError = reason
+                applyStatus = .error
+                lastError = reason
+                logger.error("could not set the damaged settings file aside: \(error)")
+            }
         }
         if let content = try? backend.readHosts() {
             actualBlocking = HostsFile.isBlocking(content)
         }
         recordStatus()
     }
+
+    public func clearStartupNotice() { startupNotice = nil }
 
     // MARK: - Derived state for the UI
 
@@ -110,13 +128,17 @@ public final class BlockerController {
     }
 
     public func statusTitle() -> String {
-        if configLoadError != nil { return "Configuration damaged — recovery required" }
-        if applyStatus.isFailing {
-            return "Update failed — currently \(actualBlocking ? "blocking" : "not blocking")"
+        if configLoadError != nil { return "Settings file is damaged — see app.log" }
+        if applyStatus.isFailing { return "Couldn’t update blocking — click to retry" }
+        let next = nextScheduleChange()
+        if actualBlocking {
+            if !config.manualEnabled, scheduleActive(), let next {
+                return "Blocking until \(formatMoment(next)) (schedule)"
+            }
+            return "Blocking"
         }
-        if actualBlocking { return "Blocking — \(activeReason().rawValue)" }
-        if config.schedule.enabled {
-            return "Not blocking — next change \(formatMoment(nextScheduleChange()))"
+        if let next, !scheduleActive() {
+            return "Not blocking · schedule starts \(formatMoment(next))"
         }
         return "Not blocking"
     }
@@ -166,54 +188,26 @@ public final class BlockerController {
         if due { await reconcile(reason: reason) }
     }
 
-    public func recoverDamagedConfig() async -> Result<URL, Error> {
+    /// Saves a hand-edited hosts file (after a backup), then re-applies the
+    /// managed section so it matches the block list again.
+    public func saveEditedHosts(_ text: String) async -> Result<URL, BlockerError> {
         await enqueue {
+            let backup: URL
             do {
-                let (fresh, backup) = try self.store.quarantineAndReset()
-                self.config = fresh
-                self.configLoadError = nil
-                self.applyStatus = .pending
-                self.lastError = ""
-                self.retryCount = 0
-                self.nextRetryAt = 0
-                self.logger.warning("damaged configuration backed up to \(backup.path)")
-                self.notify()
-                return .success(backup)
-            } catch {
-                self.applyStatus = .error
-                self.lastError = "Configuration recovery failed: \(error)"
-                self.logger.error(self.lastError)
-                self.notify()
-                return .failure(error)
-            }
-        }
-    }
-
-    public func resetManagedSection(allowPrompt: Bool) async -> Result<String, BlockerError> {
-        await enqueue {
-            do {
-                let message = try await self.offMain { try self.backend.resetManagedSection(allowPrompt: allowPrompt) }
-                await self.refreshActualState()
-                self.lastAppliedDomains = nil
-                if let loadError = self.configLoadError {
-                    self.applyStatus = .error
-                    self.lastError = loadError
-                } else {
-                    self.applyStatus = .pending
-                    self.lastError = ""
-                }
-                self.logger.warning("managed hosts section reset: \(message)")
-                self.notify()
-                return .success(message)
+                backup = try await self.offMain { try self.backend.replaceHosts(with: text) }
             } catch BlockerError.cancelled {
                 return .failure(.cancelled)
             } catch {
-                let message = "Managed hosts reset failed: \(error)"
-                self.markFailure(message)
-                self.notify()
-                return .failure(.failed(message))
+                return .failure(.failed("\(error)"))
             }
+            self.lastAppliedDomains = nil
+            _ = await self.apply(self.config, reason: "hosts-edited", allowPrompt: true, adoptOnFailure: true)
+            return .success(backup)
         }
+    }
+
+    public func readHostsText() async throws -> String {
+        try await offMain { try self.backend.readHosts() }
     }
 
     // MARK: - Core
@@ -232,6 +226,13 @@ public final class BlockerController {
         let domains = candidate.blockDomains(at: moment, calendar: calendar)
         do {
             var content = try await offMain { try self.backend.readHosts() }
+            if !HostsFile.inspect(content).isComplete {
+                // A half-deleted section has no reliable boundary; the helper
+                // backs up the whole file and strips every marker first.
+                let note = try await offMain { try self.backend.resetManagedSection(allowPrompt: allowPrompt) }
+                logger.warning("repaired an incomplete managed hosts section: \(note)")
+                content = try await offMain { try self.backend.readHosts() }
+            }
             if !HostsFile.matches(content, domains: domains) {
                 try await offMain { try self.backend.write(domains: domains, allowPrompt: allowPrompt) }
                 content = try await offMain { try self.backend.readHosts() }

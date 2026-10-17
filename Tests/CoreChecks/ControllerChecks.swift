@@ -25,7 +25,8 @@ final class Rig {
         if let config { try! config.write(to: dir.appendingPathComponent("config.json"), atomically: true, encoding: .utf8) }
         broker = SandboxPrivilegeBroker(hostsFile: dir.appendingPathComponent("hosts"), scripts: scripts, stateDirectory: dir)
         if helperInstalled { try! scripts.bundledVersion!.write(to: dir.appendingPathComponent("sandbox-helper-version"), atomically: true, encoding: .utf8) }
-        backend = HelperHostsBackend(hostsFile: dir.appendingPathComponent("hosts"), scripts: scripts, broker: broker, logger: NullLogger())
+        backend = HelperHostsBackend(hostsFile: dir.appendingPathComponent("hosts"), scripts: scripts,
+                                     backupDirectory: dir.appendingPathComponent("backups"), broker: broker, logger: NullLogger())
         counting = CountingBackend(backend)
         self.store = store?(dir.appendingPathComponent("config.json")) ?? FileConfigStore(url: dir.appendingPathComponent("config.json"))
         controller = BlockerController(
@@ -51,6 +52,7 @@ final class CountingBackend: HostsBackend {
     func readHosts() throws -> String { reads += 1; return try inner.readHosts() }
     func write(domains: [String], allowPrompt: Bool) throws { writes += 1; try inner.write(domains: domains, allowPrompt: allowPrompt) }
     func resetManagedSection(allowPrompt: Bool) throws -> String { try inner.resetManagedSection(allowPrompt: allowPrompt) }
+    func replaceHosts(with text: String) throws -> URL { try inner.replaceHosts(with: text) }
 }
 
 final class FlakyStore: ConfigStoring {
@@ -65,7 +67,11 @@ final class FlakyStore: ConfigStoring {
         }
         try inner.save(config)
     }
-    func quarantineAndReset() throws -> (Config, URL) { try inner.quarantineAndReset() }
+    var failQuarantine = false
+    func quarantineAndReset() throws -> (Config, URL) {
+        if failQuarantine { throw StorageError("read-only (injected)") }
+        return try inner.quarantineAndReset()
+    }
 }
 
 func enablingManual(_ config: Config, _ now: Date) -> Config {
@@ -206,7 +212,7 @@ func runControllerChecks() async {
         expectEqual(rig.counting.writes, 2)
     }
 
-    await testAsync("turn off all pauses the window; the override expires and is cleared") {
+    await testAsync("stop blocking pauses the window; the schedule blocks again next time") {
         let config = """
             {"sites": ["a.com"], "manual_enabled": true, "schedule": {"enabled": true,
              "windows": [{"days": [0], "start": "09:00", "end": "18:00"}]}}
@@ -215,7 +221,7 @@ func runControllerChecks() async {
         _ = await rig.controller.reconcile(reason: "startup")
         check(rig.controller.actualBlocking)
         let calendar = seoul
-        expectEqual(await rig.controller.update(reason: "off") { $0.turningOffAll(at: $1, calendar: calendar) }, .ok)
+        expectEqual(await rig.controller.update(reason: "off") { $0.stoppingBlocking(at: $1, calendar: calendar) }, .ok)
         check(!rig.controller.actualBlocking)
         expectEqual(rig.savedConfig?.scheduleOverrideUntil, at(2026, 7, 13, 18, 0))
         rig.now = at(2026, 7, 13, 18, 1)
@@ -237,48 +243,68 @@ func runControllerChecks() async {
         expectEqual(rig.controller.config.sites, ["a.com", "b.com"])
     }
 
-    await testAsync("a damaged config locks changes until recovered") {
+    await testAsync("a damaged settings file is set aside and the app starts empty") {
         let rig = Rig(config: "{not json")
+        check(rig.controller.configLoadError == nil)
+        check(rig.controller.startupNotice?.contains("config.json.corrupt-") == true, "\(String(describing: rig.controller.startupNotice))")
+        expectEqual(rig.controller.config, Config())
+        let backups = try FileManager.default.contentsOfDirectory(atPath: rig.dir.path).filter { $0.hasPrefix("config.json.corrupt-") }
+        expectEqual(backups.count, 1)
+        if let name = backups.first { expectEqual(read(rig.dir.appendingPathComponent(name)), "{not json") }
+        expectEqual(await rig.controller.update(reason: "x", enablingManual), .ok)
+    }
+
+    await testAsync("if the damaged file cannot be set aside, nothing is changed") {
+        var flaky: FlakyStore!
+        let rig = Rig(config: "{not json", store: { url in flaky = FlakyStore(url: url); flaky.failQuarantine = true; return flaky })
         check(rig.controller.configLoadError != nil)
         expectEqual(rig.controller.applyStatus, .error)
         check({ if case .failed = $0 { return true }; return false }(await rig.controller.update(reason: "x", enablingManual)))
         expectEqual(read(rig.configURL), "{not json")
-        guard case .success(let backup) = await rig.controller.recoverDamagedConfig() else {
-            return check(false, "recovery failed")
-        }
-        expectEqual(read(backup), "{not json")
-        check(rig.controller.configLoadError == nil)
-        expectEqual(await rig.controller.update(reason: "x", enablingManual), .ok)
+        expectEqual(rig.hostsText, Rig.base)
     }
 
-    await testAsync("reset repairs a broken section and blocking is re-applied") {
+    await testAsync("a half-deleted managed section is backed up and repaired automatically") {
         let rig = Rig()
         _ = await rig.controller.update(reason: "test", enablingManual)
-        try (Rig.base + AppConstants.markStart + "\n127.0.0.1\tstale.com\n").write(to: rig.hosts, atomically: true, encoding: .utf8)
+        let broken = Rig.base + AppConstants.markStart + "\n127.0.0.1\tstale.com\n"
+        try broken.write(to: rig.hosts, atomically: true, encoding: .utf8)
         rig.uptime += 31
         await rig.controller.tick()
-        expectEqual(rig.controller.applyStatus, .retrying, "helper should refuse an incomplete section")
-        guard case .success(let message) = await rig.controller.resetManagedSection(allowPrompt: false) else {
-            return check(false, "reset failed")
-        }
-        check(message.contains("backup:"))
-        expectEqual(await rig.controller.reconcile(reason: "after-reset"), .ok)
+        expectEqual(rig.controller.applyStatus, .ok)
         check(HostsFile.matches(rig.hostsText, domains: Domains.expanded(["youtube.com"])), rig.hostsText)
+        check(!rig.hostsText.contains("stale.com"))
+        let backups = try FileManager.default.contentsOfDirectory(atPath: rig.dir.path)
+            .filter { $0.hasPrefix("hosts.distractorremover-backup-") }
+        expectEqual(backups.count, 1)
     }
 
-    await testAsync("helper status, upgrade detection and uninstall") {
+    await testAsync("editing the hosts file by hand backs it up and keeps blocking in place") {
+        let rig = Rig()
+        _ = await rig.controller.update(reason: "test", enablingManual)
+        let before = rig.hostsText
+        // The user adds a line and deletes the managed section.
+        guard case .success(let backup) = await rig.controller.saveEditedHosts("127.0.0.1\tlocalhost\n10.0.0.9 nas.local") else {
+            return check(false, "save failed")
+        }
+        expectEqual(read(backup), before)
+        check(rig.hostsText.contains("10.0.0.9 nas.local\n"), rig.hostsText)
+        check(HostsFile.matches(rig.hostsText, domains: Domains.expanded(["youtube.com"])), "managed section not restored")
+        expectEqual(rig.controller.applyStatus, .ok)
+
+        rig.broker.promptResponse = .cancel
+        let current = rig.hostsText
+        expectEqual(await rig.controller.saveEditedHosts("garbage"), .failure(.cancelled))
+        expectEqual(rig.hostsText, current)
+    }
+
+    await testAsync("helper status and installation") {
         let rig = Rig(helperInstalled: false)
         expectEqual(rig.backend.helperStatus, .notInstalled)
         try rig.backend.installHelper(forUser: "someone")
         expectEqual(rig.backend.helperStatus, .ready(version: scripts.bundledVersion!))
-        check(!rig.backend.helperNeedsUpgrade)
-        try "2".write(to: rig.dir.appendingPathComponent("sandbox-helper-version"), atomically: true, encoding: .utf8)
-        rig.backend.refreshHelperStatus()
-        check(rig.backend.helperNeedsUpgrade)
         try "9".write(to: rig.dir.appendingPathComponent("sandbox-helper-version"), atomically: true, encoding: .utf8)
         expectEqual(rig.backend.refreshHelperStatus(), .unsupported(version: "9"))
-        try rig.backend.uninstallHelper()
-        expectEqual(rig.backend.helperStatus, .notInstalled)
         do {
             try rig.backend.installHelper(forUser: "bad user")
             check(false, "accepted unsafe user name")

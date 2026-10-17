@@ -142,11 +142,11 @@ func runScheduleChecks() {
 }
 
 func runConfigChecks() {
-    test("turning off all pauses an active window until it ends") {
+    test("stop blocking turns off both kinds but keeps the schedule for later") {
         let config = Config(sites: ["a.com"], manualEnabled: true,
                             schedule: Schedule(enabled: true, windows: [window([0], "09:00", "18:00")]))
         let now = at(2026, 7, 13, 10, 0)
-        let off = config.turningOffAll(at: now, calendar: seoul)
+        let off = config.stoppingBlocking(at: now, calendar: seoul)
         check(!off.manualEnabled)
         expectEqual(off.scheduleOverrideUntil, at(2026, 7, 13, 18, 0))
         check(off.schedule.enabled)
@@ -154,11 +154,11 @@ func runConfigChecks() {
         // The window comes back next week.
         check(!off.blockDomains(at: at(2026, 7, 20, 9, 30), calendar: seoul).isEmpty)
     }
-    test("turning off an always-on schedule disables it") {
+    test("stopping an always-on schedule disables it") {
         let config = Config(sites: ["a.com"], schedule: Schedule(enabled: true, windows: [
             window(Array(0...6), "00:00", "12:00"), window(Array(0...6), "12:00", "00:00"),
         ]))
-        let off = config.turningOffAll(at: at(2026, 7, 13, 10, 0), calendar: seoul)
+        let off = config.stoppingBlocking(at: at(2026, 7, 13, 10, 0), calendar: seoul)
         check(!off.schedule.enabled && off.scheduleOverrideUntil == nil)
     }
     test("normalization drops expired overrides and empty schedules") {
@@ -166,7 +166,20 @@ func runConfigChecks() {
         config.scheduleOverrideUntil = at(2026, 7, 13, 9, 0)
         let normalized = config.normalized(at: at(2026, 7, 13, 10, 0))
         check(normalized.scheduleOverrideUntil == nil && !normalized.schedule.enabled)
-        check(config.withScheduleWindows([]).schedule.enabled == false)
+        check(config.withSchedule(enabled: true, windows: []).schedule.enabled == false)
+    }
+    test("start blocking turns manual on and resumes a paused window") {
+        var config = Config(sites: ["a.com"])
+        config.scheduleOverrideUntil = at(2026, 7, 13, 18, 0)
+        let started = config.startingBlocking()
+        check(started.manualEnabled && started.scheduleOverrideUntil == nil)
+    }
+    test("saving the schedule keeps a pause only if the schedule is unchanged") {
+        var config = Config(schedule: Schedule(enabled: true, windows: [window([0], "09:00", "18:00")]))
+        config.scheduleOverrideUntil = at(2026, 7, 13, 18, 0)
+        check(config.withSchedule(enabled: true, windows: config.schedule.windows).scheduleOverrideUntil != nil)
+        check(config.withSchedule(enabled: true, windows: [window([1], "09:00", "18:00")]).scheduleOverrideUntil == nil)
+        check(!config.withSchedule(enabled: false, windows: config.schedule.windows).schedule.enabled)
     }
     test("desired blocking needs sites") {
         let config = Config(sites: [], manualEnabled: true)

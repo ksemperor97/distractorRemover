@@ -32,6 +32,16 @@ jobs:
           cat "$SANDBOX/support/app.log"
           grep -q '"apply_status" : "ok"' "$SANDBOX/support/runtime-state.json"
           grep -q "youtu.be" "$SANDBOX/hosts"
+      - name: Menu shows only the core actions
+        run: |
+          SANDBOX="$RUNNER_TEMP/dr-sandbox"
+          MENU=$(DISTRACTORREMOVER_SANDBOX="$SANDBOX" DISTRACTORREMOVER_DEBUG_SHOW=menu-dump \
+            dist/distractorRemover.app/Contents/MacOS/distractorRemover)
+          echo "$MENU"
+          echo "$MENU" | grep -qx "Stop Blocking…"
+          echo "$MENU" | grep -q "^Edit Blocked Sites…"
+          echo "$MENU" | grep -qx "Schedule…"
+          echo "$MENU" | grep -qx "Edit Hosts File…"
       - uses: actions/upload-artifact@v4
         with:
           name: distractorRemover.app

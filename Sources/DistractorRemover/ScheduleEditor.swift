@@ -2,15 +2,17 @@ import AppKit
 import BlockerCore
 
 /// Non-modal schedule editor. Day toggles and time pickers mean the user can
-/// only produce valid windows. Reports `nil` on cancel, else the new list.
+/// only produce valid windows. Reports `nil` on cancel, else whether the
+/// schedule is on and its windows.
 @MainActor
 final class ScheduleEditor: NSObject, NSWindowDelegate {
     private var windows: [ScheduleWindow]
     private var listWasEdited = false
-    private var completion: (([ScheduleWindow]?) -> Void)?
+    private var completion: (((Bool, [ScheduleWindow])?) -> Void)?
     private let calendar = Calendar.current
 
     private let window: NSWindow
+    private let enabledBox = NSButton(checkboxWithTitle: "Block sites during these times", target: nil, action: nil)
     private let days = NSSegmentedControl()
     private let startPicker = NSDatePicker()
     private let endPicker = NSDatePicker()
@@ -19,8 +21,9 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
     private let listDocument = FlippedView(frame: NSRect(x: 0, y: 0, width: 398, height: 130))
     private let listScroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 404, height: 140))
 
-    init(windows: [ScheduleWindow], completion: @escaping ([ScheduleWindow]?) -> Void) {
+    init(enabled: Bool, windows: [ScheduleWindow], completion: @escaping ((Bool, [ScheduleWindow])?) -> Void) {
         self.windows = windows
+        enabledBox.state = enabled ? .on : .off
         self.completion = completion
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 440, height: 420),
@@ -86,15 +89,16 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
         bottom.spacing = 10
 
         let note = NSTextField(wrappingLabelWithString:
-            "Overlapping windows are allowed. A window whose end is before its start runs overnight.")
+            "A window that ends before it starts runs overnight. Stop Blocking pauses only the current window; "
+                + "the schedule starts again at the next one.")
         note.font = .systemFont(ofSize: 11)
         note.textColor = .secondaryLabelColor
         note.preferredMaxLayoutWidth = 404
         note.widthAnchor.constraint(equalToConstant: 404).isActive = true
 
         let root = NSStackView(views: [
-            label("Block distracting sites on a schedule", bold: true, size: 14),
-            label("Pick the days and a time range, then click Save.", size: 12, color: .secondaryLabelColor),
+            enabledBox,
+            label("Pick days and times, click Add Window, then Save.", size: 12, color: .secondaryLabelColor),
             days,
             presets,
             timeRow,
@@ -110,7 +114,7 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
         root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
         bottom.widthAnchor.constraint(equalTo: listScroll.widthAnchor).isActive = true
 
-        window.title = "Blocking Schedule"
+        window.title = "Schedule"
         window.contentView = root
         window.delegate = self
         window.isReleasedWhenClosed = false
@@ -203,27 +207,7 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
         if result.isEmpty && !listWasEdited, let selection = currentSelection() {
             result = [selection]   // new schedule: use the current selection
         }
-        if result.isEmpty {
-            let alert = NSAlert()
-            alert.messageText = "No time windows"
-            alert.informativeText = "Turn the schedule off (no automatic blocking)?"
-            alert.addButton(withTitle: "Turn Off Schedule")
-            alert.addButton(withTitle: "Keep Editing")
-            if alert.runModal() == .alertFirstButtonReturn {
-                finish([])
-            } else {
-                statusLabel.stringValue = "Pick days and a time, then Save."
-            }
-            return
-        }
-        let alert = NSAlert()
-        alert.messageText = "Save \(result.count) time window\(result.count == 1 ? "" : "s")?"
-        var lines = result.prefix(8).map(ScheduleMath.formatWindow)
-        if result.count > 8 { lines.append("…and \(result.count - 8) more") }
-        alert.informativeText = lines.joined(separator: "\n")
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Keep Editing")
-        if alert.runModal() == .alertFirstButtonReturn { finish(result) }
+        finish((enabledBox.state == .on && !result.isEmpty, result))
     }
 
     @objc private func cancel(_ sender: Any?) {
@@ -234,7 +218,7 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
         finish(nil)   // red close button == cancel
     }
 
-    private func finish(_ result: [ScheduleWindow]?) {
+    private func finish(_ result: (Bool, [ScheduleWindow])?) {
         guard let completion else { return }
         self.completion = nil
         window.orderOut(nil)

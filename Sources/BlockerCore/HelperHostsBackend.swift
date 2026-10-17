@@ -8,6 +8,9 @@ public protocol HostsBackend: AnyObject {
     func write(domains: [String], allowPrompt: Bool) throws
     /// Backs up hosts and removes every managed marker, even an incomplete one.
     func resetManagedSection(allowPrompt: Bool) throws -> String
+    /// Replaces the whole hosts file after backing it up (manual editor).
+    /// Returns the backup's location.
+    func replaceHosts(with text: String) throws -> URL
 }
 
 /// Writes hosts only through `privileged_helper.sh`: silently via the installed
@@ -16,14 +19,16 @@ public protocol HostsBackend: AnyObject {
 public final class HelperHostsBackend: HostsBackend {
     public let hostsFile: URL
     public let scripts: HelperScripts
+    public let backupDirectory: URL
     private let broker: PrivilegeBroker
     private let logger: AppLogger
     private let lock = NSLock()
     private var cachedStatus: HelperStatus?
 
-    public init(hostsFile: URL, scripts: HelperScripts, broker: PrivilegeBroker, logger: AppLogger) {
+    public init(hostsFile: URL, scripts: HelperScripts, backupDirectory: URL, broker: PrivilegeBroker, logger: AppLogger) {
         self.hostsFile = hostsFile
         self.scripts = scripts
+        self.backupDirectory = backupDirectory
         self.broker = broker
         self.logger = logger
     }
@@ -47,22 +52,6 @@ public final class HelperHostsBackend: HostsBackend {
     }
 
     public var bundledHelperVersion: String? { scripts.bundledVersion }
-
-    /// An older compatible helper works but lacks backup-based `--reset`.
-    public var helperNeedsUpgrade: Bool {
-        guard case .ready(let version) = helperStatus, let bundled = bundledHelperVersion else { return false }
-        return version != bundled
-    }
-
-    public var helperDiagnostic: String {
-        switch helperStatus {
-        case .notInstalled: return "not ready"
-        case .unsupported(let version): return "unsupported v\(version)"
-        case .ready(let version):
-            guard let bundled = bundledHelperVersion, version != bundled else { return "ready v\(version)" }
-            return "ready v\(version); v\(bundled) recovery upgrade available"
-        }
-    }
 
     // MARK: HostsBackend
 
@@ -116,6 +105,17 @@ public final class HelperHostsBackend: HostsBackend {
         return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    public func replaceHosts(with text: String) throws -> URL {
+        let backup = try HostsBackup.create(from: hostsFile, in: backupDirectory)
+        let staged = backupDirectory.appendingPathComponent("hosts-edit-\(UUID().uuidString)")
+        let content = text.hasSuffix("\n") ? text : text + "\n"
+        try DurableFile.write(Data(content.utf8), to: staged, mode: 0o600)
+        defer { try? FileManager.default.removeItem(at: staged) }
+        try check(broker.replaceAsAdministrator(hostsFile, with: staged), fallback: "Could not save the hosts file.")
+        logger.info("hosts file edited by hand; previous version backed up to \(backup.path)")
+        return backup
+    }
+
     // MARK: Password-free mode
 
     public func installHelper(forUser user: String) throws {
@@ -125,18 +125,11 @@ public final class HelperHostsBackend: HostsBackend {
         let result = broker.runAsAdministrator(scripts.installer, arguments: [user], stdinLines: [])
         let status = refreshHelperStatus()
         if result.succeeded && status.isUsable {
-            logger.info("password-free helper installed: \(helperDiagnostic)")
+            logger.info("password-free helper installed: \(status)")
             return
         }
         try check(result, fallback: "The helper was installed but did not pass its health check.")
         throw BlockerError.failed("The helper was installed but did not pass its health check.")
-    }
-
-    public func uninstallHelper() throws {
-        let result = broker.runAsAdministrator(scripts.uninstaller, arguments: [], stdinLines: [])
-        refreshHelperStatus()
-        try check(result, fallback: "Could not remove the helper.")
-        logger.info("password-free helper removed")
     }
 
     private func check(_ result: ProcessResult, fallback: String) throws {
