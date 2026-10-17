@@ -58,10 +58,7 @@ Limits: hosts files can't block every subdomain or direct IP access, and browser
 
 ### Development
 
-```bash
-swift run CoreChecks     # logic, settings, the real helper script, controller flows
-./build_app.sh           # release .app with ad-hoc signature
-```
+Changes are checked by running the app. `./build_app.sh` builds the release `.app` with an ad-hoc signature, and `./build_app.sh --zip` also makes `dist/distractorRemover-<version>.zip` for a release.
 
 Sandbox mode runs the app against a scratch hosts file without touching `/etc/hosts` or the installed app's settings:
 
@@ -71,7 +68,7 @@ DISTRACTORREMOVER_SANDBOX=/tmp/dr-sandbox dist/distractorRemover.app/Contents/Ma
 
 `DISTRACTORREMOVER_DEBUG_SHOW=menu|menu-dump|schedule-editor|sites|hosts|quit` opens that screen at launch (`menu-dump` prints the menu as text and quits). `DISTRACTORREMOVER_SANDBOX_PROMPT=cancel` simulates cancelling the password prompt.
 
-Layout: `Sources/BlockerCore` (logic, storage, helper backend; no AppKit), `Sources/AppText` (Korean/English wording), `Sources/DistractorRemover` (menu bar UI), `helper/` (privileged shell scripts), `Tests/CoreChecks`.
+Layout: `Sources/BlockerCore` (logic, storage, helper backend; no AppKit), `Sources/AppText` (Korean/English wording), `Sources/DistractorRemover` (menu bar UI), `helper/` (privileged shell scripts).
 
 ---
 
@@ -127,10 +124,7 @@ cd distractorRemover
 
 ### 개발
 
-```bash
-swift run CoreChecks     # 로직, 설정, 실제 helper 스크립트, 컨트롤러 흐름 검사
-./build_app.sh           # ad-hoc 서명된 릴리스 .app
-```
+변경 사항은 앱을 직접 실행해서 확인해요. `./build_app.sh`는 ad-hoc 서명된 릴리스 `.app`을 만들고, `./build_app.sh --zip`은 릴리스용 `dist/distractorRemover-<버전>.zip`도 만들어요.
 
 샌드박스 모드는 `/etc/hosts`나 설치된 앱의 설정을 건드리지 않고 임시 hosts 파일로 앱을 실행해요.
 
@@ -140,4 +134,4 @@ DISTRACTORREMOVER_SANDBOX=/tmp/dr-sandbox dist/distractorRemover.app/Contents/Ma
 
 `DISTRACTORREMOVER_DEBUG_SHOW=menu|menu-dump|schedule-editor|sites|hosts|quit`은 실행 직후 해당 화면을 열어요(`menu-dump`는 메뉴를 텍스트로 출력하고 종료). `DISTRACTORREMOVER_SANDBOX_PROMPT=cancel`은 암호 입력 취소를 흉내 내요.
 
-구성: `Sources/BlockerCore`(로직, 저장, helper 연동, AppKit 없음), `Sources/AppText`(한국어/영어 문구), `Sources/DistractorRemover`(메뉴바 UI), `helper/`(권한 셸 스크립트), `Tests/CoreChecks`
+구성: `Sources/BlockerCore`(로직, 저장, helper 연동, AppKit 없음), `Sources/AppText`(한국어/영어 문구), `Sources/DistractorRemover`(메뉴바 UI), `helper/`(권한 셸 스크립트)

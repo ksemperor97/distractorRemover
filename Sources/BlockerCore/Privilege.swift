@@ -68,7 +68,7 @@ public enum HelperStatus: Equatable {
 
 /// How root-level work gets done. The system implementation uses sudo and
 /// osascript; the sandbox implementation runs the same scripts unprivileged
-/// against a scratch hosts file (development mode and CoreChecks).
+/// against a scratch hosts file (sandbox mode).
 public protocol PrivilegeBroker: AnyObject {
     /// Version reported by the installed helper via password-free sudo, or nil.
     func installedHelperVersion() -> String?
@@ -143,9 +143,6 @@ public final class SandboxPrivilegeBroker: PrivilegeBroker {
     private let scripts: HelperScripts
     private let stateFile: URL
     public var promptResponse: PromptResponse = .approve
-    /// Makes the next N helper writes fail (retry testing).
-    public var failuresToInject = 0
-    public private(set) var promptCount = 0
 
     public init(hostsFile: URL, scripts: HelperScripts, stateDirectory: URL) {
         self.hostsFile = hostsFile
@@ -172,15 +169,10 @@ public final class SandboxPrivilegeBroker: PrivilegeBroker {
         guard installedHelperVersion() != nil else {
             return ProcessResult(status: 1, stdout: "", stderr: "sudo: a password is required")
         }
-        if failuresToInject > 0 {
-            failuresToInject -= 1
-            return ProcessResult(status: 1, stdout: "", stderr: "injected helper failure")
-        }
         return runScript(scripts.privilegedHelper, [action], stdinLines)
     }
 
     public func runAsAdministrator(_ script: URL, arguments: [String], stdinLines: [String]) -> ProcessResult {
-        promptCount += 1
         if promptResponse == .cancel {
             return ProcessResult(status: 1, stdout: "", stderr: "execution error: User canceled. (-128)")
         }
@@ -200,7 +192,6 @@ public final class SandboxPrivilegeBroker: PrivilegeBroker {
     }
 
     public func replaceAsAdministrator(_ destination: URL, with source: URL) -> ProcessResult {
-        promptCount += 1
         if promptResponse == .cancel {
             return ProcessResult(status: 1, stdout: "", stderr: "execution error: User canceled. (-128)")
         }

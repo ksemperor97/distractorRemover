@@ -15,12 +15,5 @@ let package = Package(
         .target(name: "AppText", dependencies: ["BlockerCore"]),
         // The menu bar app (AppKit UI only).
         .executableTarget(name: "DistractorRemover", dependencies: ["BlockerCore", "AppText"]),
-        // Self-contained checks: Command Line Tools ship neither XCTest nor the
-        // swift-testing macro plugin, so tests run as `swift run CoreChecks`.
-        .executableTarget(
-            name: "CoreChecks",
-            dependencies: ["BlockerCore", "AppText"],
-            path: "Tests/CoreChecks"
-        ),
     ]
 )

@@ -1,7 +1,6 @@
 import Foundation
 
-/// Values shared with the shell helpers in `helper/`. CoreChecks verifies that
-/// the scripts agree with these, so a change on one side cannot drift silently.
+/// Values shared with the shell helpers in `helper/`; keep both sides in step.
 public enum AppConstants {
     public static let appName = "distractorRemover"
     public static let bundleIdentifier = "com.sjk.distractorremover"

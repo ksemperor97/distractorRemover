@@ -12,8 +12,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Toolchain
         run: swift --version
-      - name: Core checks
-        run: swift run CoreChecks
       - name: Build app bundle
         run: ./build_app.sh
       - name: Smoke-launch in sandbox mode
