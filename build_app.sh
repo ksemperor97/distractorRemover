@@ -1,6 +1,8 @@
 #!/bin/bash
-# Build distractorRemover.app from the Swift package; --install also copies it
-# to /Applications and launches it. Needs only the Xcode Command Line Tools.
+# Build distractorRemover.app from the Swift package. Needs only the Xcode
+# Command Line Tools.
+#   --install  also copy it to /Applications and launch it
+#   --zip      also make dist/distractorRemover-<version>.zip for a release
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -44,9 +46,12 @@ EOF
 codesign --force --sign "$IDENTITY" --timestamp=none "$APP"
 codesign --verify --strict "$APP"
 
-if [ "${1:-}" = "--install" ]; then
+if [ "${1:-}" = "--zip" ]; then
+    # ditto keeps the code signature intact; plain zip can break it.
+    ditto -c -k --keepParent "$APP" "$DIR/dist/distractorRemover-$VERSION.zip"
+    echo "✅ Built $APP and dist/distractorRemover-$VERSION.zip (v$VERSION)"
+elif [ "${1:-}" = "--install" ]; then
     pkill -x distractorRemover 2>/dev/null || true
-    pkill -f distractor_remover.py 2>/dev/null || true   # v1.x Python build
     sleep 0.5
     rm -rf "/Applications/distractorRemover.app"
     cp -R "$APP" /Applications/
