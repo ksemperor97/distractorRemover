@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-check:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version
+      - name: Core checks
+        run: swift run CoreChecks
+      - name: Build app bundle
+        run: ./build_app.sh
+      - name: Smoke-launch in sandbox mode
+        run: |
+          SANDBOX="$RUNNER_TEMP/dr-sandbox"
+          mkdir -p "$SANDBOX/support"
+          printf '{"sites":["youtube.com"],"manual_enabled":true}' > "$SANDBOX/support/config.json"
+          bash helper/privileged_helper.sh --version > "$SANDBOX/support/sandbox-helper-version"
+          DISTRACTORREMOVER_SANDBOX="$SANDBOX" dist/distractorRemover.app/Contents/MacOS/distractorRemover &
+          APP_PID=$!
+          for _ in $(seq 1 20); do
+            grep -q '"apply_status" : "ok"' "$SANDBOX/support/runtime-state.json" 2>/dev/null && break
+            sleep 1
+          done
+          kill "$APP_PID" || true
+          cat "$SANDBOX/support/app.log"
+          grep -q '"apply_status" : "ok"' "$SANDBOX/support/runtime-state.json"
+          grep -q "youtu.be" "$SANDBOX/hosts"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distractorRemover.app
+          path: dist/distractorRemover.app

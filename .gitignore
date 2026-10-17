@@ -1,18 +1,16 @@
-# Python
+# Swift / build artifacts
+.build/
+.swiftpm/
+dist/
+build/
+
+# Shared Python environment symlink (workspace convention; not used by this app)
 .venv
 venv
-__pycache__/
-*.pyc
-*.egg-info/
-
-# py2app / build artifacts
-build/
-dist/
 
 # macOS
 .DS_Store
 
 # runtime data (created under ~/Library/Application Support, but ignore if present)
-hosts.staged
 config.json
-launch.log
+*.log

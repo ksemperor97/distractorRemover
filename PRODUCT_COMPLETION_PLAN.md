@@ -5,6 +5,21 @@
 - 대상 플랫폼: macOS
 - 문서 목적: distractorRemover를 정상 경로에서만 동작하는 개인용 도구가 아니라, 상태를 신뢰할 수 있고 설치부터 제거까지 안전한 집중 보조 앱으로 완성하기 위한 실행 계획
 
+## 구현 현황 — 2026-10-17 (v2.0.0)
+
+v2.0.0 Swift 네이티브 재작성 완료:
+
+- [x] rumps/PyObjC/PyInstaller 제거, Swift + AppKit 메뉴바 앱 (번들 24 MB → 1 MB 미만)
+- [x] `BlockerCore`(로직·저장·helper 백엔드)와 AppKit UI 분리, 컨트롤러는 포트 주입으로 검사 가능
+- [x] 값 타입 `Config` + 후보 적용 후 채택(copy-on-write): 인증 취소 시 revert 처리 불필요
+- [x] hosts 작성자를 `privileged_helper.sh` 하나로 통일 (관리자 인증 경로도 같은 스크립트 사용)
+- [x] helper 상태 캐시, 변경 시에만 저장·상태 기록, 메뉴는 열 때만 구성, 차단 작업은 메인 스레드 밖에서 실행
+- [x] helper 버전·마커·경로를 한 곳에서 정의하고 스크립트와의 일치를 검사로 강제
+- [x] 잠자기 해제·시계/시간대 변경 시 즉시 조정
+- [x] SMAppService 기반 Open at Login, v1 LaunchAgent 정리
+- [x] v1 설정·helper v2/v3·인스턴스 잠금 호환
+- [x] `swift run CoreChecks` 검사와 GitHub Actions CI, 샌드박스 실행 모드
+
 ## 구현 현황 — 2026-07-13
 
 v1.2.0 텍스트 편집과 상태 화면 정리 완료:
