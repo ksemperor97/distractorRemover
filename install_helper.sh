@@ -5,56 +5,102 @@
 #
 # Run as root (the app invokes it via osascript "with administrator privileges").
 # Usage: install_helper.sh <login-username>
-set -e
+set -euo pipefail
 
 USER_NAME="$1"
 if [ -z "$USER_NAME" ]; then
     echo "usage: install_helper.sh <username>" >&2
     exit 64
 fi
+case "$USER_NAME" in
+    *[!A-Za-z0-9._-]*) echo "refusing unsafe username" >&2; exit 65 ;;
+esac
+id "$USER_NAME" >/dev/null 2>&1 || { echo "unknown user: $USER_NAME" >&2; exit 67; }
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+HELPER_SOURCE="$SCRIPT_DIR/privileged_helper.sh"
 HELPER=/usr/local/bin/distractorremover-helper
 SUDOERS=/etc/sudoers.d/distractorremover   # no dot in name (sudo ignores those)
 
 mkdir -p /usr/local/bin
+[ -f "$HELPER_SOURCE" ] || { echo "helper source missing" >&2; exit 66; }
 
 # --- the privileged helper -------------------------------------------------
-cat > "$HELPER" <<'HELPER_EOF'
-#!/bin/bash
-# distractorRemover privileged helper.
-# Copies a user-staged hosts file into /etc/hosts and flushes DNS.
-# Locked down: only accepts a file named .../distractorRemover/hosts.staged
-# that is owned by the invoking (sudo) user, so it can't be abused to read
-# root-only files via world-readable /etc/hosts.
-set -e
-STAGED="$1"
-case "$STAGED" in
-    */distractorRemover/hosts.staged) ;;
-    *) echo "refusing: unexpected staged path" >&2; exit 2 ;;
-esac
-[ -f "$STAGED" ] || { echo "refusing: staged file missing" >&2; exit 3; }
-OWNER=$(stat -f '%Su' "$STAGED")   # stat follows symlinks -> catches link tricks
-if [ -n "$SUDO_USER" ] && [ "$OWNER" != "$SUDO_USER" ]; then
-    echo "refusing: staged file not owned by caller" >&2
+TMP_HELPER=$(mktemp /usr/local/bin/.distractorremover-helper.XXXXXX)
+install -m 755 -o root -g wheel "$HELPER_SOURCE" "$TMP_HELPER"
+"$TMP_HELPER" --version | grep -qx '3' || {
+    rm -f "$TMP_HELPER"
+    echo "helper version validation failed" >&2
     exit 4
-fi
-cp "$STAGED" /etc/hosts
-dscacheutil -flushcache 2>/dev/null || true
-killall -HUP mDNSResponder 2>/dev/null || true
-HELPER_EOF
-
-chown root:wheel "$HELPER"
-chmod 755 "$HELPER"
+}
 
 # --- the sudoers rule (validated before install) ---------------------------
-TMP_SUDO=$(mktemp)
+TMP_SUDO=$(mktemp /etc/sudoers.d/.distractorremover.XXXXXX)
 printf '%s ALL=(root) NOPASSWD: %s\n' "$USER_NAME" "$HELPER" > "$TMP_SUDO"
-if visudo -cf "$TMP_SUDO" >/dev/null 2>&1; then
-    install -m 440 -o root -g wheel "$TMP_SUDO" "$SUDOERS"
-    rm -f "$TMP_SUDO"
-    echo "installed"
-else
-    rm -f "$TMP_SUDO"
+if ! visudo -cf "$TMP_SUDO" >/dev/null 2>&1; then
+    rm -f "$TMP_SUDO" "$TMP_HELPER"
     echo "sudoers validation failed — not installing" >&2
     exit 5
 fi
+
+# Keep the previous pair out of the way until the new pair passes its real
+# NOPASSWD health check. The EXIT trap restores both files on every failure.
+BACKUP_DIR=$(mktemp -d /tmp/distractorremover-helper-install.XXXXXX)
+HAD_HELPER=false
+HAD_SUDOERS=false
+INSTALL_STARTED=false
+COMMITTED=false
+
+rollback_or_cleanup() {
+    rc=$?
+    trap - EXIT INT TERM HUP
+    if [ "$COMMITTED" != true ] && [ "$INSTALL_STARTED" = true ]; then
+        if [ "$HAD_HELPER" = true ]; then
+            if [ -e "$BACKUP_DIR/helper" ] || [ -L "$BACKUP_DIR/helper" ]; then
+                rm -f "$HELPER"
+                mv -f "$BACKUP_DIR/helper" "$HELPER"
+            fi
+        else
+            rm -f "$HELPER"
+        fi
+        if [ "$HAD_SUDOERS" = true ]; then
+            if [ -e "$BACKUP_DIR/sudoers" ] || [ -L "$BACKUP_DIR/sudoers" ]; then
+                rm -f "$SUDOERS"
+                mv -f "$BACKUP_DIR/sudoers" "$SUDOERS"
+            fi
+        else
+            rm -f "$SUDOERS"
+        fi
+    fi
+    rm -f "$TMP_HELPER" "$TMP_SUDO"
+    rm -rf "$BACKUP_DIR"
+    exit "$rc"
+}
+trap rollback_or_cleanup EXIT
+trap 'exit 130' INT TERM HUP
+
+INSTALL_STARTED=true
+if [ -e "$HELPER" ] || [ -L "$HELPER" ]; then
+    HAD_HELPER=true
+    mv "$HELPER" "$BACKUP_DIR/helper"
+fi
+if [ -e "$SUDOERS" ] || [ -L "$SUDOERS" ]; then
+    HAD_SUDOERS=true
+    mv "$SUDOERS" "$BACKUP_DIR/sudoers"
+fi
+
+chown root:wheel "$TMP_HELPER"
+chmod 755 "$TMP_HELPER"
+mv "$TMP_HELPER" "$HELPER"
+chown root:wheel "$TMP_SUDO"
+chmod 440 "$TMP_SUDO"
+mv "$TMP_SUDO" "$SUDOERS"
+
+if ! /usr/bin/sudo -u "$USER_NAME" /usr/bin/sudo -n "$HELPER" --check \
+    | grep -qx 'ready 3'; then
+    echo "installed helper failed its NOPASSWD health check" >&2
+    exit 6
+fi
+
+COMMITTED=true
+echo "installed v3"

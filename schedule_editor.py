@@ -14,9 +14,10 @@ or None if the user cancelled.
 import objc
 from AppKit import (
     NSAlert, NSApplication, NSBackingStoreBuffered, NSBeep, NSButton, NSColor,
-    NSControlSizeSmall, NSDatePicker, NSDatePickerElementFlagHourMinute,
+    NSBezelBorder, NSControlSizeSmall, NSDatePicker, NSDatePickerElementFlagHourMinute,
     NSDatePickerModeSingle, NSDatePickerStyleTextFieldAndStepper, NSFont,
-    NSLayoutAttributeLeading, NSSegmentedControl, NSSegmentSwitchTrackingSelectAny,
+    NSLayoutAttributeLeading, NSScrollView, NSSegmentedControl,
+    NSSegmentSwitchTrackingSelectAny,
     NSStackView, NSTextField, NSUserInterfaceLayoutOrientationHorizontal,
     NSUserInterfaceLayoutOrientationVertical, NSView, NSWindow,
     NSWindowStyleMaskClosable, NSWindowStyleMaskTitled,
@@ -28,6 +29,11 @@ from Foundation import (
 
 DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 _PRESETS = {0: [0, 1, 2, 3, 4], 1: [5, 6], 2: [0, 1, 2, 3, 4, 5, 6], 3: []}
+
+
+class FlippedDocumentView(NSView):
+    def isFlipped(self):
+        return True
 
 
 def _label(text, bold=False, size=13, color=None):
@@ -59,6 +65,7 @@ class ScheduleEditor(NSObject):
         if self is None:
             return None
         self.windows = [dict(w) for w in (windows or [])]
+        self._list_was_edited = False
         self._callback = callback
         self._done = False
         self._prev_policy = None
@@ -151,6 +158,16 @@ class ScheduleEditor(NSObject):
         self.listStack.setOrientation_(NSUserInterfaceLayoutOrientationVertical)
         self.listStack.setAlignment_(NSLayoutAttributeLeading)
         self.listStack.setSpacing_(6)
+        self.listDocument = FlippedDocumentView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, 398, 130))
+        self.listDocument.addSubview_(self.listStack)
+        self.listScroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(0, 0, 404, 140))
+        self.listScroll.setHasVerticalScroller_(True)
+        self.listScroll.setAutohidesScrollers_(True)
+        self.listScroll.setBorderType_(NSBezelBorder)
+        self.listScroll.setDocumentView_(self.listDocument)
+        self.listScroll.widthAnchor().constraintEqualToConstant_(404).setActive_(True)
+        self.listScroll.heightAnchor().constraintEqualToConstant_(140).setActive_(True)
 
         cancel = NSButton.buttonWithTitle_target_action_("Cancel", self, "cancel:")
         cancel.setKeyEquivalent_("\x1b")                # Esc
@@ -169,8 +186,12 @@ class ScheduleEditor(NSObject):
             presets,
             time_row,
             self.status,
+            _label(
+                "Overlapping windows are allowed; combine them if you prefer a shorter list.",
+                size=11, color=NSColor.secondaryLabelColor(),
+            ),
             _label("Scheduled windows", bold=True, size=12),
-            self.listStack,
+            self.listScroll,
             bottom,
         ])
         root.setOrientation_(NSUserInterfaceLayoutOrientationVertical)
@@ -206,6 +227,12 @@ class ScheduleEditor(NSObject):
                 row = NSStackView.stackViewWithViews_([_label(_fmt_window(w)), rm])
                 row.setSpacing_(12)
                 self.listStack.addArrangedSubview_(row)
+        fit = self.listStack.fittingSize()
+        document_height = max(130, fit.height)
+        self.listDocument.setFrame_(NSMakeRect(0, 0, 398, document_height))
+        self.listStack.setFrame_(NSMakeRect(0, 0, 398, fit.height))
+        self.listScroll.contentView().scrollToPoint_((0, 0))
+        self.listScroll.reflectScrolledClipView_(self.listScroll.contentView())
         if self.window is not None:
             self.window.setContentSize_(self.window.contentView().fittingSize())
 
@@ -244,6 +271,19 @@ class ScheduleEditor(NSObject):
         a.addButtonWithTitle_("Keep editing")
         return a.runModal() == 1000                      # NSAlertFirstButtonReturn
 
+    @objc.python_method
+    def _confirm_save(self, windows):
+        a = NSAlert.alloc().init()
+        count = len(windows)
+        a.setMessageText_(f"Save {count} time window{'s' if count != 1 else ''}?")
+        lines = [_fmt_window(w) for w in windows[:8]]
+        if count > 8:
+            lines.append(f"…and {count - 8} more")
+        a.setInformativeText_("\n".join(lines))
+        a.addButtonWithTitle_("Save")
+        a.addButtonWithTitle_("Keep editing")
+        return a.runModal() == 1000
+
     # --- actions -----------------------------------------------------------
 
     def applyPreset_(self, sender):
@@ -259,7 +299,12 @@ class ScheduleEditor(NSObject):
                 "Pick at least one day." if not days else "Start and end can’t be the same.")
             NSBeep()
             return
+        if cur in self.windows:
+            self.status.setStringValue_("That time window is already in the list.")
+            NSBeep()
+            return
         self.windows.append(cur)
+        self._list_was_edited = True
         self.status.setStringValue_("")
         self._refresh_list()
 
@@ -267,11 +312,12 @@ class ScheduleEditor(NSObject):
         i = sender.tag()
         if 0 <= i < len(self.windows):
             del self.windows[i]
+            self._list_was_edited = True
             self._refresh_list()
 
     def save_(self, sender):
         windows = list(self.windows)
-        if not windows:                       # nothing added → use current selection
+        if not windows and not self._list_was_edited:  # new schedule → use selection
             cur = self._current_window()
             if cur is not None:
                 windows = [cur]
@@ -280,6 +326,8 @@ class ScheduleEditor(NSObject):
                 self._finish([])
             else:
                 self.status.setStringValue_("Pick days and a time, then Save.")
+            return
+        if not self._confirm_save(windows):
             return
         self._finish(windows)
 

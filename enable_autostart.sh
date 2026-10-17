@@ -5,6 +5,15 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 LABEL="com.sjk.distractorremover"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
+APP_EXECUTABLE="/Applications/distractorRemover.app/Contents/MacOS/distractorRemover"
+if [ -x "$APP_EXECUTABLE" ]; then
+    PROGRAM="$APP_EXECUTABLE"
+    SCRIPT_ARG=""
+else
+    PROGRAM="$DIR/.venv/bin/python"
+    SCRIPT_ARG="$DIR/distractor_remover.py"
+fi
+
 mkdir -p "$HOME/Library/LaunchAgents"
 SUPPORT="$HOME/Library/Application Support/distractorRemover"
 mkdir -p "$SUPPORT"
@@ -18,10 +27,15 @@ cat > "$PLIST" <<EOF
     <key>Label</key><string>$LABEL</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$DIR/.venv/bin/python</string>
-        <string>$DIR/distractor_remover.py</string>
+        <string>$PROGRAM</string>
+$(if [ -n "$SCRIPT_ARG" ]; then printf '        <string>%s</string>\n' "$SCRIPT_ARG"; fi)
     </array>
     <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key><false/>
+    </dict>
+    <key>ThrottleInterval</key><integer>10</integer>
     <key>ProcessType</key><string>Interactive</string>
     <key>StandardOutPath</key><string>$LOG</string>
     <key>StandardErrorPath</key><string>$LOG</string>
@@ -31,6 +45,7 @@ EOF
 
 # Stop any already-running instance so we don't get two menu bar icons.
 pkill -f "distractor_remover.py" 2>/dev/null || true
+pkill -x "distractorRemover" 2>/dev/null || true
 launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
 
