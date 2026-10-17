@@ -120,13 +120,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Debug
 
+    /// Pops the status menu at a fixed spot (a crowded menu bar may hide the
+    /// status item) and opens it again whenever it closes, like a user would.
+    private func popMenuForDebugging() {
+        menuNeedsUpdate(menu)
+        Dialogs.bringToFront()
+        menu.popUp(positioning: nil, at: NSPoint(x: 200, y: 1000), in: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.popMenuForDebugging() }
+    }
+
     private func debugShow(_ what: String) {
         switch what {
         case "menu":
-            // Popped at a fixed spot: a crowded menu bar may hide the status item.
-            menuNeedsUpdate(menu)
-            Dialogs.bringToFront()
-            menu.popUp(positioning: nil, at: NSPoint(x: 200, y: 1000), in: nil)
+            popMenuForDebugging()
         case "menu-dump":
             // Prints the menu as text and quits (used by CI and for review).
             menuNeedsUpdate(menu)
