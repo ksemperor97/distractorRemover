@@ -5,11 +5,18 @@ public enum BlockerError: Error, Equatable, CustomStringConvertible {
     case cancelled
     /// A silent update was needed but password-free mode is unavailable.
     case authorizationRequired(String)
+    /// The hosts markers are missing, reversed or nested; the file was left alone.
+    case hostsMarkersDamaged
+    /// After writing, the hosts file still did not show the requested state.
+    case verifyMismatch
     case failed(String)
 
     public var description: String {
         switch self {
         case .cancelled: return "Cancelled."
+        case .hostsMarkersDamaged:
+            return "The distractorRemover markers in the hosts file are missing, reversed or nested; the file was left unchanged."
+        case .verifyMismatch: return "The hosts file did not match the requested state after applying."
         case .authorizationRequired(let message), .failed(let message): return message
         }
     }

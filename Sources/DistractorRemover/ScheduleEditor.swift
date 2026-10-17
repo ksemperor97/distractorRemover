@@ -1,4 +1,5 @@
 import AppKit
+import AppText
 import BlockerCore
 
 /// Non-modal schedule editor. Day toggles and time pickers mean the user can
@@ -12,7 +13,9 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
     private let calendar = Calendar.current
 
     private let window: NSWindow
-    private let enabledBox = NSButton(checkboxWithTitle: "Block sites during these times", target: nil, action: nil)
+    private let text = Texts()
+    private let enabledBox = NSButton(checkboxWithTitle: L("Block sites during these times", "이 시간에 사이트 차단"),
+                                      target: nil, action: nil)
     private let days = NSSegmentedControl()
     private let startPicker = NSDatePicker()
     private let endPicker = NSDatePicker()
@@ -46,13 +49,14 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
     private func build() {
         days.segmentCount = 7
         days.trackingMode = .selectAny
-        for (index, name) in ScheduleMath.dayNames.enumerated() {
+        for (index, name) in text.dayNames.enumerated() {
             days.setLabel(name, forSegment: index)
             days.setWidth(44, forSegment: index)
             days.setSelected(index < 5, forSegment: index)   // default Mon–Fri
         }
 
-        let presets = NSStackView(views: ["Weekdays", "Weekends", "Every day", "Clear"].enumerated().map { index, title in
+        let presetTitles = [L("Weekdays", "평일"), L("Weekends", "주말"), L("Every day", "매일"), L("Clear", "지우기")]
+        let presets = NSStackView(views: presetTitles.enumerated().map { index, title in
             let button = small(NSButton(title: title, target: self, action: #selector(applyPreset(_:))))
             button.tag = index
             return button
@@ -61,8 +65,8 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
 
         configure(startPicker, minutes: 9 * 60)
         configure(endPicker, minutes: 18 * 60)
-        let addButton = small(NSButton(title: "Add Window", target: self, action: #selector(addWindow(_:))))
-        let timeRow = NSStackView(views: [label("From"), startPicker, label("to"), endPicker, addButton])
+        let addButton = small(NSButton(title: L("Add Window", "시간대 추가"), target: self, action: #selector(addWindow(_:))))
+        let timeRow = NSStackView(views: [label(L("From", "시작")), startPicker, label(L("to", "끝")), endPicker, addButton])
         timeRow.spacing = 6
 
         statusLabel.font = .systemFont(ofSize: 11)
@@ -79,18 +83,20 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
         listScroll.widthAnchor.constraint(equalToConstant: 404).isActive = true
         listScroll.heightAnchor.constraint(equalToConstant: 140).isActive = true
 
-        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancel(_:)))
+        let cancel = NSButton(title: L("Cancel", "취소"), target: self, action: #selector(cancel(_:)))
         cancel.keyEquivalent = "\u{1b}"
-        let save = NSButton(title: "Save", target: self, action: #selector(save(_:)))
+        let save = NSButton(title: L("Save", "저장"), target: self, action: #selector(save(_:)))
         save.keyEquivalent = "\r"
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let bottom = NSStackView(views: [spacer, cancel, save])
         bottom.spacing = 10
 
-        let note = NSTextField(wrappingLabelWithString:
+        let note = NSTextField(wrappingLabelWithString: L(
             "A window that ends before it starts runs overnight. Stop Blocking pauses only the current window; "
-                + "the schedule starts again at the next one.")
+                + "the schedule starts again at the next one.",
+            "끝이 시작보다 이르면 자정을 넘겨 이어져요. 차단 해제는 지금 진행 중인 시간대만 쉬게 하고, "
+                + "다음 시간대부터 다시 차단해요."))
         note.font = .systemFont(ofSize: 11)
         note.textColor = .secondaryLabelColor
         note.preferredMaxLayoutWidth = 404
@@ -98,13 +104,14 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
 
         let root = NSStackView(views: [
             enabledBox,
-            label("Pick days and times, click Add Window, then Save.", size: 12, color: .secondaryLabelColor),
+            label(L("Pick days and times, click Add Window, then Save.", "요일과 시간을 고르고 시간대 추가를 누른 뒤 저장해요."),
+                  size: 12, color: .secondaryLabelColor),
             days,
             presets,
             timeRow,
             statusLabel,
             note,
-            label("Scheduled windows", bold: true, size: 12),
+            label(L("Scheduled windows", "차단 시간대"), bold: true, size: 12),
             listScroll,
             bottom,
         ])
@@ -114,7 +121,7 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
         root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
         bottom.widthAnchor.constraint(equalTo: listScroll.widthAnchor).isActive = true
 
-        window.title = "Schedule"
+        window.title = L("Schedule", "스케줄")
         window.contentView = root
         window.delegate = self
         window.isReleasedWhenClosed = false
@@ -126,6 +133,7 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
         picker.datePickerElements = .hourMinute
         picker.datePickerMode = .single
         picker.isBezeled = true
+        picker.locale = text.locale
         var parts = DateComponents()
         parts.year = 2000
         parts.month = 1
@@ -152,12 +160,13 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
             view.removeFromSuperview()
         }
         if windows.isEmpty {
-            listStack.addArrangedSubview(label("(the selection above will be used)", size: 12, color: .secondaryLabelColor))
+            listStack.addArrangedSubview(label(L("(the selection above will be used)", "(위에서 고른 시간이 쓰여요)"),
+                                               size: 12, color: .secondaryLabelColor))
         } else {
             for (index, item) in windows.enumerated() {
-                let remove = small(NSButton(title: "Remove", target: self, action: #selector(removeRow(_:))))
+                let remove = small(NSButton(title: L("Remove", "삭제"), target: self, action: #selector(removeRow(_:))))
                 remove.tag = index
-                let row = NSStackView(views: [label(ScheduleMath.formatWindow(item)), remove])
+                let row = NSStackView(views: [label(text.window(item)), remove])
                 row.spacing = 12
                 listStack.addArrangedSubview(row)
             }
@@ -180,12 +189,14 @@ final class ScheduleEditor: NSObject, NSWindowDelegate {
 
     @objc private func addWindow(_ sender: Any?) {
         guard let selection = currentSelection() else {
-            statusLabel.stringValue = selectedDays.isEmpty ? "Pick at least one day." : "Start and end can’t be the same."
+            statusLabel.stringValue = selectedDays.isEmpty
+                ? L("Pick at least one day.", "요일을 하나 이상 골라 주세요.")
+                : L("Start and end can’t be the same.", "시작과 끝이 같을 수 없어요.")
             NSSound.beep()
             return
         }
         guard !windows.contains(selection) else {
-            statusLabel.stringValue = "That time window is already in the list."
+            statusLabel.stringValue = L("That time window is already in the list.", "이미 목록에 있는 시간대예요.")
             NSSound.beep()
             return
         }

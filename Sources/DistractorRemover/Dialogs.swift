@@ -1,4 +1,5 @@
 import AppKit
+import AppText
 
 /// Thin wrappers around NSAlert. A menu-bar-only app must activate itself
 /// first, or the alert opens behind the frontmost app without key focus.
@@ -17,7 +18,7 @@ enum Dialogs {
     static func show(
         _ title: String,
         _ message: String,
-        buttons: [String] = ["OK"],
+        buttons: [String]? = nil,
         destructiveIndex: Int? = nil,
         style: NSAlert.Style = .informational,
         accessory: NSView? = nil,
@@ -28,7 +29,7 @@ enum Dialogs {
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = style
-        for (index, label) in buttons.enumerated() {
+        for (index, label) in (buttons ?? [L("OK", "확인")]).enumerated() {
             let button = alert.addButton(withTitle: label)
             if index == destructiveIndex { button.hasDestructiveAction = true }
         }
@@ -48,15 +49,8 @@ enum Dialogs {
         show(title, message, style: .warning)
     }
 
-    static func confirm(_ title: String, _ message: String, ok: String, cancel: String = "Cancel", destructive: Bool = false) -> Bool {
-        show(title, message, buttons: [ok, cancel], destructiveIndex: destructive ? 0 : nil) == 0
-    }
-
-    static func prompt(_ title: String, _ message: String, placeholder: String, ok: String) -> String? {
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        field.placeholderString = placeholder
-        let choice = show(title, message, buttons: [ok, "Cancel"], accessory: field, firstResponder: field)
-        return choice == 0 ? field.stringValue : nil
+    static func confirm(_ title: String, _ message: String, ok: String, cancel: String? = nil, destructive: Bool = false) -> Bool {
+        show(title, message, buttons: [ok, cancel ?? L("Cancel", "취소")], destructiveIndex: destructive ? 0 : nil) == 0
     }
 
     /// Multi-line monospaced editor. Returns the edited text, or nil on cancel.
@@ -75,7 +69,7 @@ enum Dialogs {
         textView.autoresizingMask = [.width]
         textView.string = text
         scroll.documentView = textView
-        let choice = show(title, message, buttons: [ok, "Cancel"], accessory: scroll, firstResponder: textView)
+        let choice = show(title, message, buttons: [ok, L("Cancel", "취소")], accessory: scroll, firstResponder: textView)
         return choice == 0 ? textView.string : nil
     }
 }

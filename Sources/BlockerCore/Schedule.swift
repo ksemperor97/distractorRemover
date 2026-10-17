@@ -59,8 +59,6 @@ public struct Schedule: Equatable {
 }
 
 public enum ScheduleMath {
-    public static let dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
     /// Monday = 0 … Sunday = 6, in the given calendar's time zone.
     public static func weekdayIndex(_ date: Date, calendar: Calendar) -> Int {
         (calendar.component(.weekday, from: date) + 5) % 7
@@ -103,30 +101,5 @@ public enum ScheduleMath {
         return candidates.filter { $0 > date }.sorted().first {
             isActive($0, schedule: schedule, overrideUntil: overrideUntil, calendar: calendar) != current
         }
-    }
-
-    public static func formatDays(_ days: [Int]) -> String {
-        let sorted = Array(Set(days)).sorted()
-        switch sorted {
-        case [0, 1, 2, 3, 4]: return "Mon–Fri"
-        case [5, 6]: return "Sat–Sun"
-        case Array(0...6): return "Every day"
-        default: return sorted.map { dayNames[$0] }.joined(separator: ", ")
-        }
-    }
-
-    public static func formatWindow(_ window: ScheduleWindow) -> String {
-        "\(formatDays(window.days))  \(window.startText)–\(window.endText)"
-    }
-
-    /// `"18:00"` today, otherwise `"Tue 18:00"`.
-    public static func formatMoment(_ date: Date?, now: Date, calendar: Calendar) -> String {
-        guard let date else { return "none" }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = calendar.isDate(date, inSameDayAs: now) ? "HH:mm" : "EEE HH:mm"
-        return formatter.string(from: date)
     }
 }

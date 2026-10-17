@@ -118,7 +118,14 @@ public enum Domains {
     }
 
     public struct ParseError: Error, Equatable, CustomStringConvertible {
-        public let description: String
+        public enum Kind: Equatable { case invalidEntry, invalidDomain }
+        public let kind: Kind
+        public let line: Int
+        public let text: String
+
+        public var description: String {
+            "\(kind == .invalidEntry ? "Invalid entry" : "Invalid domain") on line \(line): \(text)"
+        }
     }
 
     /// Parses one domain or URL per line, or `127.0.0.1`/`::1` lines copied from hosts.
@@ -140,12 +147,11 @@ public enum Domains {
                 candidates = []
             }
             if candidates.isEmpty {
-                let shown = rawLine.trimmingCharacters(in: .whitespaces)
-                throw ParseError(description: "Invalid entry on line \(lineNumber): \(shown.isEmpty ? "(empty)" : shown)")
+                throw ParseError(kind: .invalidEntry, line: lineNumber, text: rawLine.trimmingCharacters(in: .whitespaces))
             }
             for candidate in candidates {
                 guard let domain = normalize(candidate) else {
-                    throw ParseError(description: "Invalid domain on line \(lineNumber): \(candidate)")
+                    throw ParseError(kind: .invalidDomain, line: lineNumber, text: candidate)
                 }
                 let site = canonicalSite(domain)
                 if seen.insert(site).inserted { sites.append(site) }

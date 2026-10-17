@@ -1,3 +1,4 @@
+import AppText
 @testable import BlockerCore
 import Foundation
 
@@ -148,10 +149,51 @@ func runScheduleChecks() {
         check(ScheduleWindow(days: [], start: "09:00", end: "10:00") == nil)
         check(ScheduleWindow(days: [7], start: "09:00", end: "10:00") == nil)
     }
-    test("window formatting") {
-        expectEqual(ScheduleMath.formatWindow(window([4, 0, 1, 2, 3], "09:00", "18:00")), "Mon–Fri  09:00–18:00")
-        expectEqual(ScheduleMath.formatDays([6, 5]), "Sat–Sun")
-        expectEqual(ScheduleMath.formatDays([0, 2]), "Mon, Wed")
+    test("window and time wording in both languages") {
+        let en = Texts(language: .english, calendar: seoul), ko = Texts(language: .korean, calendar: seoul)
+        expectEqual(en.window(window([4, 0, 1, 2, 3], "09:00", "18:00")), "Mon–Fri  9:00 AM–6:00 PM")
+        expectEqual(ko.window(window([4, 0, 1, 2, 3], "09:00", "18:00")), "평일  오전 9:00–오후 6:00")
+        expectEqual(en.days([6, 5]), "Sat–Sun")
+        expectEqual(ko.days([0, 2]), "월, 수")
+        expectEqual(en.time(minutes: 0), "12:00 AM")
+        expectEqual(ko.time(minutes: 12 * 60 + 5), "오후 12:05")
+        let now = at(2026, 7, 13, 10, 0)
+        expectEqual(en.moment(at(2026, 7, 13, 18, 0), now: now), "6:00 PM")
+        expectEqual(ko.moment(at(2026, 7, 14, 9, 0), now: now), "화 오전 9:00")
+    }
+    test("status and failure wording in both languages") {
+        let en = Texts(language: .english, calendar: seoul), ko = Texts(language: .korean, calendar: seoul)
+        let now = at(2026, 7, 13, 10, 0)
+        expectEqual(en.status(.blocking(until: at(2026, 7, 13, 18, 0)), now: now), "Blocking until 6:00 PM (schedule)")
+        expectEqual(ko.status(.blocking(until: at(2026, 7, 13, 18, 0)), now: now), "오후 6:00까지 차단 중 (스케줄)")
+        expectEqual(ko.status(.notBlocking(scheduleStarts: at(2026, 7, 14, 9, 0)), now: now), "차단 안 함 · 스케줄 시작 화 오전 9:00")
+        expectEqual(en.status(.hostsNeedFixing, now: now), "Hosts file needs fixing — click to edit")
+        check(ko.failure(.hostsMarkersDamaged).contains("hosts 파일 편집…"), "Korean message should name the Korean menu item")
+        check(en.failure(.helperUnavailable).contains("Schedule…"))
+        let error = Domains.ParseError(kind: .invalidDomain, line: 2, text: "not a domain")
+        expectEqual(ko.parseError(error), "2번째 줄은 웹사이트 주소가 아니에요: not a domain")
+    }
+    test("System Default follows the first preferred language") {
+        expectEqual(Language.resolve(.system, preferredLanguages: ["ko-KR", "en-US"]), .korean)
+        expectEqual(Language.resolve(.system, preferredLanguages: ["en-KR", "ko-KR"]), .english)
+        expectEqual(Language.resolve(.korean, preferredLanguages: ["en-US"]), .korean)
+        let suite = "drchecks-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Preferences/\(suite).plist"))
+        }
+        let localizer = Localizer(defaults: defaults)
+        expectEqual(localizer.preference, .system)
+        localizer.preference = .korean
+        expectEqual(Localizer(defaults: defaults).preference, .korean)
+        let file = temporaryDirectory().appendingPathComponent("language")
+        let sandboxed = Localizer(defaults: defaults)
+        sandboxed.storePreference(in: file)
+        sandboxed.preference = .english
+        expectEqual(read(file), "en")
+        expectEqual(Localizer(defaults: defaults).preference, .korean, "sandbox choice leaked into preferences")
     }
 }
 

@@ -6,6 +6,26 @@ public enum ApplyStatus: String {
     public var isFailing: Bool { self == .retrying || self == .error }
 }
 
+/// What the menu's status line should say. Worded by the UI (both languages).
+public enum StatusSummary: Equatable {
+    case settingsDamaged
+    case hostsNeedFixing
+    case updateFailed
+    /// `until` is set when only the schedule is blocking: its window end.
+    case blocking(until: Date?)
+    /// `scheduleStarts` is the next schedule window, if there is one.
+    case notBlocking(scheduleStarts: Date?)
+}
+
+/// Why the last update failed, for the UI to word. `lastError` keeps the English log text.
+public enum Failure: Equatable {
+    case helperUnavailable
+    case hostsMarkersDamaged
+    case hostsMismatch
+    case settingsNotSaved(String)
+    case other(String)
+}
+
 public enum Outcome: Equatable {
     case ok
     case cancelled
@@ -30,11 +50,12 @@ public final class BlockerController {
     public private(set) var config: Config
     /// Set only if a damaged settings file could not even be set aside.
     public private(set) var configLoadError: String?
-    /// One-time message for the user (e.g. a damaged settings file was replaced).
-    public private(set) var startupNotice: String?
+    /// Set once when a damaged settings file was replaced: where the old one was kept.
+    public private(set) var recoveredSettingsBackup: URL?
     public private(set) var actualBlocking = false
     public private(set) var applyStatus: ApplyStatus
     public private(set) var lastError = ""
+    public private(set) var lastFailure: Failure?
     public private(set) var retryCount = 0
     /// The hosts markers are missing, reversed or nested; only a manual edit fixes it.
     public private(set) var hostsNeedManualFix = false
@@ -91,8 +112,7 @@ public final class BlockerController {
             do {
                 let (fresh, backup) = try store.quarantineAndReset()
                 config = fresh
-                startupNotice = "Your settings file was damaged, so distractorRemover started with empty settings. "
-                    + "The old file was kept at:\n\(backup.path)"
+                recoveredSettingsBackup = backup
                 logger.warning("damaged settings moved to \(backup.path)")
             } catch {
                 config = Config()
@@ -108,7 +128,7 @@ public final class BlockerController {
         recordStatus()
     }
 
-    public func clearStartupNotice() { startupNotice = nil }
+    public func clearRecoveredSettingsNotice() { recoveredSettingsBackup = nil }
 
     // MARK: - Derived state for the UI
 
@@ -131,25 +151,15 @@ public final class BlockerController {
         config.nextScheduleChange(after: now(), calendar: calendar)
     }
 
-    public func formatMoment(_ date: Date?) -> String {
-        ScheduleMath.formatMoment(date, now: now(), calendar: calendar)
-    }
-
-    public func statusTitle() -> String {
-        if configLoadError != nil { return "Settings file is damaged — see app.log" }
-        if hostsNeedManualFix { return "Hosts file needs fixing — click to edit" }
-        if applyStatus.isFailing { return "Couldn’t update blocking — click to retry" }
+    public func status() -> StatusSummary {
+        if configLoadError != nil { return .settingsDamaged }
+        if hostsNeedManualFix { return .hostsNeedFixing }
+        if applyStatus.isFailing { return .updateFailed }
         let next = nextScheduleChange()
         if actualBlocking {
-            if !config.manualEnabled, scheduleActive(), let next {
-                return "Blocking until \(formatMoment(next)) (schedule)"
-            }
-            return "Blocking"
+            return .blocking(until: !config.manualEnabled && scheduleActive() ? next : nil)
         }
-        if let next, !scheduleActive() {
-            return "Not blocking · schedule starts \(formatMoment(next))"
-        }
-        return "Not blocking"
+        return .notBlocking(scheduleStarts: scheduleActive() ? nil : next)
     }
 
     // MARK: - Operations
@@ -250,19 +260,11 @@ public final class BlockerController {
         do {
             var content = try await offMain { try self.backend.readHosts() }
             hostsNeedManualFix = !HostsFile.inspect(content).isWellFormed
-            if hostsNeedManualFix {
-                throw BlockerError.failed(
-                    "The distractorRemover marker lines in the hosts file are missing, reversed or nested, "
-                        + "so the file was left unchanged. Open Edit Hosts File… and delete every line from the "
-                        + "START marker through the END marker; blocking is then written again."
-                )
-            }
+            if hostsNeedManualFix { throw BlockerError.hostsMarkersDamaged }
             if !HostsFile.matches(content, domains: domains) {
                 try await offMain { try self.backend.write(domains: domains, allowPrompt: allowPrompt) }
                 content = try await offMain { try self.backend.readHosts() }
-                guard HostsFile.matches(content, domains: domains) else {
-                    throw BlockerError.failed("The hosts file did not match the requested state after applying.")
-                }
+                guard HostsFile.matches(content, domains: domains) else { throw BlockerError.verifyMismatch }
             }
             actualBlocking = HostsFile.isBlocking(content)
         } catch BlockerError.cancelled {
@@ -275,7 +277,7 @@ public final class BlockerController {
                 adopt(candidate)
                 persistPending()
             }
-            markFailure("\(error)")
+            markFailure(Self.failure(for: error))
             await refreshActualState()
             notify()
             return .failed("\(error)")
@@ -286,12 +288,13 @@ public final class BlockerController {
         lastAppliedDomains = domains
         if let saveError = persistPending() {
             let message = "Could not save settings after \(reason): \(saveError)"
-            markFailure(message)
+            markFailure(.settingsNotSaved("\(saveError)"), log: message)
             notify()
             return .failed(message)
         }
         applyStatus = .ok
         lastError = ""
+        lastFailure = nil
         retryCount = 0
         nextRetryAt = 0
         lastVerifyAt = uptime()
@@ -321,13 +324,34 @@ public final class BlockerController {
         }
     }
 
-    private func markFailure(_ message: String) {
+    private func markFailure(_ failure: Failure, log message: String? = nil) {
         retryCount += 1
         let delays = AppConstants.retryDelays
         nextRetryAt = uptime() + delays[min(retryCount - 1, delays.count - 1)]
         applyStatus = .retrying
-        lastError = message
-        logger.error("hosts reconciliation failed: \(message)")
+        lastFailure = failure
+        lastError = message ?? Self.logText(failure)
+        logger.error("hosts reconciliation failed: \(lastError)")
+    }
+
+    private static func failure(for error: Error) -> Failure {
+        switch error as? BlockerError {
+        case .authorizationRequired?: return .helperUnavailable
+        case .hostsMarkersDamaged?: return .hostsMarkersDamaged
+        case .verifyMismatch?: return .hostsMismatch
+        default: return .other("\(error)")
+        }
+    }
+
+    private static func logText(_ failure: Failure) -> String {
+        switch failure {
+        case .helperUnavailable: return BlockerError.authorizationRequired(
+            "Password-free mode is unavailable; automatic blocking cannot update hosts.").description
+        case .hostsMarkersDamaged: return BlockerError.hostsMarkersDamaged.description
+        case .hostsMismatch: return BlockerError.verifyMismatch.description
+        case .settingsNotSaved(let detail): return "Could not save settings: \(detail)"
+        case .other(let detail): return detail
+        }
     }
 
     private func refreshActualState() async {

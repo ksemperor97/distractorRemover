@@ -1,4 +1,5 @@
 import AppKit
+import AppText
 import BlockerCore
 
 @MainActor
@@ -31,6 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             version: environment.version
         )
         super.init()
+        if paths.isSandbox {
+            Localizer.shared.storePreference(in: paths.supportDirectory.appendingPathComponent("language"))
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -63,9 +67,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Warm the helper-status cache off the main thread (it runs sudo).
             await Task.detached { _ = backend.refreshHelperStatus() }.value
             await controller.reconcile(reason: "startup")
-            if let notice = controller.startupNotice {
-                controller.clearStartupNotice()
-                Dialogs.warn("Settings were reset", notice)
+            if let backup = controller.recoveredSettingsBackup {
+                controller.clearRecoveredSettingsNotice()
+                Dialogs.warn(L("Settings were reset", "설정을 초기화했어요"),
+                             L("Your settings file was damaged, so distractorRemover started with empty settings. "
+                                + "The old file was kept at:\n\(backup.path)",
+                               "설정 파일이 손상되어 빈 설정으로 시작했어요. 이전 파일은 여기에 보관했어요:\n\(backup.path)"))
             }
             if let show = environment.debugShow { debugShow(show) }
         }
@@ -89,20 +96,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let button = statusItem?.button else { return }
         let symbol: String
         let description: String
+        let status = Texts(calendar: controller.calendar).status(controller.status(), now: controller.currentTime)
         if controller.applyStatus.isFailing {
             symbol = "exclamationmark.triangle.fill"
-            description = "distractorRemover: update failed"
         } else if controller.actualBlocking {
             symbol = "shield.fill"
-            description = "distractorRemover: blocking"
         } else {
             symbol = "shield"
-            description = "distractorRemover: not blocking"
         }
+        description = "distractorRemover: \(status)"
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: description)
         image?.isTemplate = true
         button.image = image
-        button.toolTip = controller.statusTitle()
+        button.toolTip = status
     }
 
     /// The menu is built only when it opens, from current state.

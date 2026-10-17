@@ -11,13 +11,15 @@ let package = Package(
     targets: [
         // Pure logic, persistence and the privileged-helper backend. No AppKit.
         .target(name: "BlockerCore"),
+        // Korean/English wording and date formatting (Foundation only).
+        .target(name: "AppText", dependencies: ["BlockerCore"]),
         // The menu bar app (AppKit UI only).
-        .executableTarget(name: "DistractorRemover", dependencies: ["BlockerCore"]),
+        .executableTarget(name: "DistractorRemover", dependencies: ["BlockerCore", "AppText"]),
         // Self-contained checks: Command Line Tools ship neither XCTest nor the
         // swift-testing macro plugin, so tests run as `swift run CoreChecks`.
         .executableTarget(
             name: "CoreChecks",
-            dependencies: ["BlockerCore"],
+            dependencies: ["BlockerCore", "AppText"],
             path: "Tests/CoreChecks"
         ),
     ]

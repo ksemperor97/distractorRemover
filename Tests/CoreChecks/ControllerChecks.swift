@@ -245,7 +245,7 @@ func runControllerChecks() async {
     await testAsync("a damaged settings file is set aside and the app starts empty") {
         let rig = Rig(config: "{not json")
         check(rig.controller.configLoadError == nil)
-        check(rig.controller.startupNotice?.contains("config.json.corrupt-") == true, "\(String(describing: rig.controller.startupNotice))")
+        check(rig.controller.recoveredSettingsBackup?.lastPathComponent.hasPrefix("config.json.corrupt-") == true)
         expectEqual(rig.controller.config, Config())
         let backups = try FileManager.default.contentsOfDirectory(atPath: rig.dir.path).filter { $0.hasPrefix("config.json.corrupt-") }
         expectEqual(backups.count, 1)
@@ -275,7 +275,8 @@ func runControllerChecks() async {
         expectEqual(rig.hostsText, damaged)
         expectEqual(rig.counting.writes, writes, "wrote to a damaged file")
         check(rig.controller.hostsNeedManualFix)
-        expectEqual(rig.controller.statusTitle(), "Hosts file needs fixing — click to edit")
+        expectEqual(rig.controller.status(), .hostsNeedFixing)
+        expectEqual(rig.controller.lastFailure, .hostsMarkersDamaged)
         // Stopping blocking must not touch it either.
         let calendar = seoul
         _ = await rig.controller.update(reason: "stop") { $0.stoppingBlocking(at: $1, calendar: calendar) }
