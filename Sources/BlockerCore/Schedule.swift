@@ -1,6 +1,6 @@
 import Foundation
 
-/// A weekly time window. Days use Monday = 0 … Sunday = 6, matching the v1 config.
+/// A weekly time window. Days use Monday = 0 … Sunday = 6, as stored in config.json.
 /// When `end <= start` the window runs overnight into the following day.
 public struct ScheduleWindow: Equatable, Hashable {
     public let days: [Int]

@@ -13,13 +13,10 @@ public enum AppConstants {
     public static let sudoersPath = "/etc/sudoers.d/distractorremover"
     public static let systemHostsPath = "/etc/hosts"
 
-    /// LaunchAgent written by v1.x `enable_autostart.sh`; still honoured and cleaned up.
-    public static let legacyLaunchAgentLabel = "com.sjk.distractorremover"
-
     public static let configSchemaVersion = 2
     /// Installed helper versions the app can drive. v4 adds the marker-order check;
-    /// the app checks marker order itself before calling any version.
-    public static let compatibleHelperVersions: Set<String> = ["2", "3", "4"]
+    /// the app checks marker order itself before calling either version.
+    public static let compatibleHelperVersions: Set<String> = ["3", "4"]
     /// Limit enforced by `privileged_helper.sh`.
     public static let maxDomains = 512
 
@@ -41,10 +38,6 @@ public struct AppPaths {
     public var hostsBackups: URL { supportDirectory.appendingPathComponent("hosts-backups") }
     public var instanceLock: URL { supportDirectory.appendingPathComponent("instance.lock") }
 
-    public var legacyLaunchAgent: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/LaunchAgents/\(AppConstants.legacyLaunchAgentLabel).plist")
-    }
 
     public static func standard() -> AppPaths {
         let support = FileManager.default.homeDirectoryForCurrentUser

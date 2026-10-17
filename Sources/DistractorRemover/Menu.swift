@@ -34,7 +34,7 @@ extension AppDelegate {
         }
 
         items.append(ActionItem(text.editHosts, symbol: "doc.text") { [unowned self] in editHostsFile() })
-        let loginEnabled = !environment.paths.isSandbox && LoginItem.isEnabled(environment.paths)
+        let loginEnabled = !environment.paths.isSandbox && LoginItem.isEnabled
         items.append(ActionItem(text.openAtLogin, state: loginEnabled ? .on : .off) { [unowned self] in
             toggleLoginItem()
         })

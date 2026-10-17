@@ -10,9 +10,9 @@ if CommandLine.arguments.contains("--unregister-login-item") {
 
 let environment = AppEnvironment.make()
 
-// One instance per user (also guards against a v1.x Python copy running).
+// One instance per user.
 guard let instanceLock = InstanceLock(url: environment.paths.instanceLock) else {
-    exit(0)   // a clean exit, so a KeepAlive LaunchAgent does not respawn us
+    exit(0)   // another copy is already running
 }
 
 MainActor.assumeIsolated {

@@ -4,10 +4,6 @@
 dist/
 build/
 
-# Shared Python environment symlink (workspace convention; not used by this app)
-.venv
-venv
-
 # macOS
 .DS_Store
 

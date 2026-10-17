@@ -243,9 +243,9 @@ extension AppDelegate {
             return Dialogs.info(L("Not in sandbox mode", "샌드박스 모드에서는 안 돼요"),
                                 L("Open at Login only works for the installed app.", "로그인 시 열기는 설치된 앱에서만 동작해요."))
         }
-        let enable = !LoginItem.isEnabled(environment.paths)
+        let enable = !LoginItem.isEnabled
         do {
-            if try LoginItem.setEnabled(enable, paths: environment.paths) {
+            if try LoginItem.setEnabled(enable) {
                 Dialogs.info(L("Approval needed", "승인이 필요해요"),
                              L("Allow distractorRemover in System Settings → General → Login Items.",
                                "시스템 설정 → 일반 → 로그인 항목에서 distractorRemover를 허용해 주세요."))

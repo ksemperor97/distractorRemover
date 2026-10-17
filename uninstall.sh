@@ -17,7 +17,7 @@ for arg in "$@"; do
 done
 
 if [ "$DRY_RUN" = true ]; then
-    echo "Would remove the Open at Login item and legacy LaunchAgent"
+    echo "Would remove the Open at Login item"
     echo "Would stop distractorRemover processes"
     echo "Would clear the distractorRemover /etc/hosts section"
     echo "Would remove helper and sudoers rule"
@@ -40,10 +40,6 @@ APP="/Applications/distractorRemover.app"
 if [ -x "$APP/Contents/MacOS/distractorRemover" ]; then
     "$APP/Contents/MacOS/distractorRemover" --unregister-login-item || true
 fi
-PLIST="$HOME/Library/LaunchAgents/com.sjk.distractorremover.plist"   # v1.x autostart
-launchctl unload "$PLIST" 2>/dev/null || true
-rm -f "$PLIST"
-pkill -f "distractor_remover.py" 2>/dev/null || true
 pkill -x "distractorRemover" 2>/dev/null || true
 
 # Prefer the scripts next to this file; fall back to the installed app's copy.

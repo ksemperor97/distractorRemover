@@ -6,8 +6,8 @@ public struct ConfigLoadError: Error, CustomStringConvertible {
     public init(_ description: String) { self.description = description }
 }
 
-/// Reads and writes `config.json`, compatible with the v1.x Python app
-/// (schema 1 with `manual_blocking`/`blocking`, and schema 2).
+/// Reads and writes `config.json`. Anything it cannot read safely is reported
+/// instead of being repaired silently.
 public enum ConfigCodec {
     public static func decode(_ data: Data) throws -> Config {
         let object: Any
@@ -66,7 +66,7 @@ public enum ConfigCodec {
             overrideUntil = parseLocalTimestamp(text)
         }
 
-        let manual = dict["manual_enabled"] ?? dict["manual_blocking"] ?? dict["blocking"]
+        let manual = dict["manual_enabled"]
         return Config(
             sites: Domains.canonicalList(siteStrings),
             manualEnabled: truthy(manual),
